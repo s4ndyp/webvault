@@ -1,0 +1,54 @@
+name: Docker Image Build and Push
+
+on:
+  # Trigger de workflow wanneer er iets naar de 'main' branch wordt gepusht
+  push:
+    branches:
+      - main
+  # Maakt het ook mogelijk om de Action handmatig te starten via de GitHub UI
+  workflow_dispatch:
+
+jobs:
+  build_and_push:
+    # Draait op de nieuwste Ubuntu runner
+    runs-on: ubuntu-latest
+    
+    # Nodig om de code uit te checken en de image te pushen naar GHCR
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      # Vereist voor moderne, efficiënte Docker builds
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to the Container registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata (tags, labels) for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}
+        tags: |
+          # Tag als 'latest' op de main branch
+          type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+          # Tag met de korte commit hash
+          type=sha,format=short
+
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        # Gebruik de huidige directory als context (waar de Dockerfile staat)
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
