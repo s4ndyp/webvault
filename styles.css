@@ -1,0 +1,57 @@
+:root {
+    --color-primary: 99 102 241; /* Indigo */
+}
+
+/* CodeMirror Custom Overrides */
+.CodeMirror {
+    height: 100% !important;
+    font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    font-size: 14px;
+    background-color: #1e293b !important; /* bg-dark_paper */
+    color: #e2e8f0 !important;
+}
+
+.cm-s-material-darker.CodeMirror {
+    background-color: #1e293b !important;
+    color: #e2e8f0 !important;
+}
+
+.cm-s-material-darker .CodeMirror-gutters {
+    background-color: #1e293b !important;
+    border-right: 1px solid #334155 !important;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #0f172a; 
+}
+::-webkit-scrollbar-thumb {
+    background: #334155; 
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #475569; 
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+[v-cloak] {
+    display: none;
+}
+
+.fade-enter-active, .fade-leave-active {
+    transition: opacity 0.3s ease;
+}
+.fade-enter-from, .fade-leave-to {
+    opacity: 0;
+}
