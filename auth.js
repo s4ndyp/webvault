@@ -1,16 +1,18 @@
 // CONFIGURATIE
 const API_CONFIG = {
-    BASE_URL: 'http://10.10.2.20:8080',
+    // De BASE_URL is nu een lege string. Dit zorgt ervoor dat API-requests
+    // relatief zijn aan het huidige domein. De gateway die deze frontend serveert,
+    // zal de requests (bijv. /api/sitebuilder) opvangen en doorsturen.
+    BASE_URL: '',
     ENDPOINTS: {
-        LOGIN: '/api/auth/login',
+        // De gateway gebruikt een generieke endpoint structuur. We specificeren hier de collectienaam.
         BASE_API: '/api/sitebuilder'
     },
-    TOKEN_KEY: 'SITEBUILDER_JWT_TOKEN'
+    CLIENT_ID_KEY: 'SITEBUILDER_CLIENT_ID' // Vervangt de JWT token key
 };
 
 // STATE
-let isLoggedIn = false;
-let authToken = localStorage.getItem(API_CONFIG.TOKEN_KEY);
+let clientId = localStorage.getItem(API_CONFIG.CLIENT_ID_KEY);
 
 // --- HULP FUNCTIES VOOR DATA MAPPING ---
 // Zorgt ervoor dat alle projectobjecten dezelfde structuur hebben: id, name, lastModified, etc.
@@ -24,82 +26,62 @@ function normalizeProjectData(doc) {
     }
 
     // 2. ID Mapping
-    const id = doc.id || doc._id || coreData.id || coreData._id;
+    // De gateway levert consistent een '_id' veld.
+    const id = doc._id || doc.id || coreData._id || coreData.id;
 
     // 3. Naam Mapping
     const name = coreData.name || coreData.title || 'Naamloos Project';
     
-    // 4. Tijd Mapping (Sterkere logica om de laatste wijzigingstijd te vinden)
-    let lastModified = coreData.lastModified || 0; 
-    
-    // NIEUW: Fallback 1: Controleer de meta data van de backend
-    if (!lastModified && coreData.meta && coreData.meta.updated_at) {
-        lastModified = coreData.meta.updated_at; // Pakt "Mon, 15 Dec 2025 20:29:48 GMT"
-    }
+    // 4. Tijd Mapping (aangepast voor de gateway)
+    // De gateway levert een '_updated_at' of '_created_at' ISO string.
+    let lastModified = coreData._updated_at || coreData._created_at || coreData.lastModified;
 
-    // Fallback 2: Standaard database velden
-    if (!lastModified) {
-        lastModified = coreData.updatedAt || coreData.createdAt || 0;
-    }
-
-    // Convert string date (zoals uit 'meta.updated_at') to timestamp
+    // Converteer string datum naar een numerieke timestamp
     if (typeof lastModified === 'string') {
         const date = new Date(lastModified);
-        // lastModified wordt een millisecond timestamp (dit is cruciaal)
         lastModified = isNaN(date.getTime()) ? 0 : date.getTime();
+    } else if (typeof lastModified !== 'number') {
+        lastModified = 0;
     }
-    
+
     // 5. Combineer en garandeer array-structuren
     return {
         ...coreData,      
         id: id,           
         _id: id,          
-        name: name, // Nu gegarandeerd aanwezig
-        lastModified: lastModified, // Nu gegarandeerd een timestamp
+        name: name,
+        lastModified: lastModified,
         files: Array.isArray(coreData.files) ? coreData.files : [],
         history: Array.isArray(coreData.history) ? coreData.history : [],
     };
 }
 
 // --- AUTH FUNCTIES ---
-async function loginUser(username, password) {
-    try {
-        console.log('Poging tot inloggen op:', `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGIN}`);
-        const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.LOGIN}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            if (data.token) {
-                authToken = data.token;
-                localStorage.setItem(API_CONFIG.TOKEN_KEY, authToken);
-                isLoggedIn = true;
-                return { success: true };
-            }
-        }
-        return { success: false, message: 'Ongeldige inloggegevens' };
-    } catch (error) {
-        console.error('Login error:', error);
-        return { success: false, message: 'Kan geen verbinding maken met server' };
+async function loginUser(username, _password) {
+    // De gateway gebruikt geen wachtwoord, maar een 'x-client-id'.
+    // We simuleren hier de login door de gebruikersnaam als client-id in te stellen.
+    // In een productieomgeving zou een aparte auth-service dit ID bepalen.
+    if (username) {
+        clientId = username;
+        localStorage.setItem(API_CONFIG.CLIENT_ID_KEY, clientId);
+        console.log(`Client ID ingesteld op: ${clientId}`);
+        return { success: true };
     }
+    return { success: false, message: 'Gebruikersnaam (Client ID) is verplicht' };
 }
 
 function logoutUser() {
-    authToken = null;
-    isLoggedIn = false;
-    localStorage.removeItem(API_CONFIG.TOKEN_KEY);
+    clientId = null;
+    localStorage.removeItem(API_CONFIG.CLIENT_ID_KEY);
     window.location.reload(); 
 }
 
 // GENERIC FETCH MET AUTH HEADER
 async function fetchWithAuth(endpoint, options = {}) {
-    if (!authToken) return null;
+    if (!clientId) return null;
 
     const defaultHeaders = {
-        'Authorization': `Bearer ${authToken}`,
+        'x-client-id': clientId, // Gebruik de x-client-id header die de gateway verwacht
         'Content-Type': 'application/json'
     };
 
@@ -116,7 +98,7 @@ async function fetchWithAuth(endpoint, options = {}) {
         const response = await fetch(url, config);
         
         if (response.status === 401) {
-            console.warn('Token verlopen, uitloggen...');
+            console.warn('Niet geautoriseerd, uitloggen...');
             logoutUser();
             return null;
         }
@@ -141,15 +123,9 @@ async function fetchProjectList() {
         const rawData = await response.json();
         console.log('Ruwe lijst data van server:', rawData);
         
-        let projectsArray = rawData;
+        // De gateway retourneert direct een array.
+        const projectsArray = rawData;
         
-        // VEILIGHEIDSCHECK: haal de array uit een eventuele wrapper (zoals { data: [...] })
-        if (rawData && Array.isArray(rawData.projects)) {
-             projectsArray = rawData.projects;
-        } else if (rawData && Array.isArray(rawData.data)) {
-             projectsArray = rawData.data;
-        }
-
         if (Array.isArray(projectsArray)) {
             // Pas normalisatie toe op elk lijst-item
             return projectsArray.map(item => normalizeProjectData(item)).filter(p => p && p.id);
@@ -195,7 +171,11 @@ async function saveProjectToCloud(projectData) {
 
     if (response && response.ok) {
         const result = await response.json();
-        return normalizeProjectData(result);
+        // Bij een PUT request retourneert de gateway alleen een status.
+        // Bij een POST request een nieuw object met _id.
+        // We geven de originele data terug, aangevuld met een eventueel nieuw ID.
+        const finalData = { ...projectData, ...result };
+        return normalizeProjectData(finalData);
     }
     throw new Error('Opslaan mislukt');
 }

@@ -228,6 +228,7 @@ createApp({
         const handleLogin = async () => {
             isLoading.value = true;
             loginError.value = '';
+            // Het wachtwoord wordt genegeerd; de gateway gebruikt alleen de username als client-id.
             const result = await loginUser(loginForm.value.username, loginForm.value.password);
             if (result.success) {
                 isAuthenticated.value = true;
