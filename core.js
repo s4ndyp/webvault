@@ -368,27 +368,37 @@ createApp({
             }
         };
 
-        const saveToCloud = async (isSilent = false) => {
-            if (!currentProjectId.value || !manager) return;
+ const saveToCloud = async (isSilent = false) => {
+    if (!currentProjectId.value || !manager) return;
 
-            const dataPayload = {
-                _id: currentProjectId.value,
-                name: currentProjectName.value,
-                files: files.value,
-                history: history.value,
-                currentVersion: currentVersion.value,
-                highestVersion: highestVersion.value
-            };
+    // STAP 1: Forceer de huidige editor inhoud in de files array
+    if (editorInstance && activeFileName.value) {
+        const currentContent = editorInstance.getValue();
+        const fileToUpdate = files.value.find(f => f.name === activeFileName.value);
+        if (fileToUpdate) {
+            fileToUpdate.content = currentContent;
+            fileToUpdate.lastModified = Date.now();
+        }
+    }
 
-            try {
-                await manager.saveSmartDocument('projects', dataPayload);
-                if (!isSilent) showToast('Opgeslagen', 'success');
-            } catch (e) {
-                console.error(e);
-                showToast('Fout bij opslaan!', 'error');
-            }
-        };
+    // STAP 2: Maak de payload (nu met de juiste content)
+    const dataPayload = {
+        _id: currentProjectId.value,
+        name: currentProjectName.value,
+        files: JSON.parse(JSON.stringify(files.value)), // Diepe kopie om proxy issues te voorkomen
+        history: history.value,
+        currentVersion: currentVersion.value,
+        highestVersion: highestVersion.value
+    };
 
+    try {
+        await manager.saveSmartDocument('projects', dataPayload);
+        if (!isSilent) showToast('Opgeslagen', 'success');
+    } catch (e) {
+        console.error(e);
+        showToast('Fout bij opslaan!', 'error');
+    }
+};
         const createBackup = async (isInitial = false) => {
             if (!projectActive.value) return;
 
