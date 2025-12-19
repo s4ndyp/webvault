@@ -399,27 +399,33 @@ createApp({
         showToast('Fout bij opslaan!', 'error');
     }
 };
-        const createBackup = async (isInitial = false) => {
-            if (!projectActive.value) return;
+const createBackup = async (isInitial = false) => {
+    if (!projectActive.value) return;
 
-            if (!isInitial) {
-                highestVersion.value = currentVersion.value + 1;
-            }
+    if (!isInitial) {
+        // Verhoog het nummer VOORDAT je de snapshot maakt
+        highestVersion.value++; 
+        currentVersion.value = highestVersion.value;
+    }
 
-            const snapshot = JSON.parse(JSON.stringify(files.value));
-            const backupRecord = {
-                version: currentVersion.value,
-                timestamp: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-                files: snapshot
-            };
+    const snapshot = JSON.parse(JSON.stringify(files.value));
+    const backupRecord = {
+        version: currentVersion.value, // Dit pakt nu het opgehoogde nummer
+        timestamp: new Date().toLocaleTimeString('nl-NL', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+        }),
+        files: snapshot
+    };
 
-            history.value.unshift(backupRecord);
-            await saveToCloud(isInitial);
+    history.value.unshift(backupRecord);
+    await saveToCloud(isInitial);
 
-            if (!isInitial) {
-                showToast(`Backup v${currentVersion.value}`, 'success');
-            }
-        };
+    if (!isInitial) {
+        showToast(`Backup v${currentVersion.value}`, 'success');
+    }
+};
 
         const setActiveFile = (name) => {
             activeFileName.value = name;
