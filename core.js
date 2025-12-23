@@ -90,9 +90,10 @@ createApp({
             'index.html', 'styles.css', 'tailwind.js', 'core.js', 'render.js'
         ];
 
-        // --- INIT ---
+ // --- INIT ---
         onMounted(async () => {
             try {
+                // 1. Start de manager en haal projecten op
                 await initManager();
                 await refreshProjectList();
             } catch (e) {
@@ -100,9 +101,20 @@ createApp({
                 showToast('Fout bij starten manager', 'error');
             }
             
-            timerInterval = setInterval(() => {
+            // 2. Start de hoofd-timer (elke minuut)
+            timerInterval = setInterval(async () => {
                 currentTime.value = Date.now();
+                
+                // Optioneel: Check elke minuut ook de server status automatisch
+                if (navigator.onLine) {
+                    await checkServerStatus();
+                }
             }, 60000);
+
+            // 3. Voer de eerste check direct uit bij het opstarten
+            await checkServerStatus(); 
+            
+            console.log('[App] Initialisatie voltooid. Server status:', publishStatus.value);
         });
 
 // --- CODEMIRROR EDITOR SETUP ---
@@ -723,14 +735,15 @@ const closeTab = (name) => {
 };       
         
         
-   // Haal de status op bij het opstarten
 const checkServerStatus = async () => {
     try {
+        // We gebruiken de proxy of het directe IP
         const res = await fetch(`${API_URL}/api/server-status`);
         const data = await res.json();
-        publishStatus.value = data.status;
+        publishStatus.value = data.status; // Dit zet hem op 'Running' of 'Stopped'
     } catch (e) {
-        console.error("Server offline");
+        console.error("Kon server status niet ophalen");
+        publishStatus.value = 'Stopped';
     }
 };
 
