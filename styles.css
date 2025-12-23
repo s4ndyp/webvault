@@ -21,6 +21,77 @@
     border-right: 1px solid #334155 !important;
 }
 
+.tab-active {
+    background-color: #0f172a !important; /* bg-dark */
+    border-top: 2px solid rgb(var(--color-primary)) !important;
+    color: white !important;
+}
+
+/* Kleur voor de zoekresultaten in de editor 
+.cm-searching {
+    background-color: rgba(255, 255, 0, 0.4); /* Geel met transparantie 
+    border-bottom: 2px solid yellow;
+    color: white !important;
+}
+
+/* De 'cm-searching' class moet de standaard syntax kleuren overschrijven */
+.cm-searching {
+    background-color: #ffeb3b !important; /* Fel geel */
+    color: #000000 !important;           /* Altijd zwarte letters voor leesbaarheid */
+    font-weight: bold !important;
+    border-radius: 2px;
+    box-shadow: 0 0 4px rgba(0,0,0,0.8);
+    display: inline-block;
+}
+
+/* Soms voegt CodeMirror een extra wrapper toe, deze helpt ook: */
+.cm-searching span {
+    color: #000 !important;
+}
+
+
+/* Scrollbar voor de tabbladen balk */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* Zorg dat de sidebar buttons mooi uitlijnen */
+aside nav button, aside nav .group {
+    text-align: left;
+}
+
+/* Editor container overgang */
+.CodeMirror {
+    transition: background-color 0.3s ease;
+}
+
+/* Zorg dat de tabbladen-balk dropdowns toelaat die er buiten steken */
+.shrink-0.h-12 {
+    overflow: visible !important; /* Laat dropdowns buiten de balk treden */
+    z-index: 50; /* Zorg dat de hele balk boven de editor-inhoud ligt */
+}
+
+/* De dropdown zelf moet echt overal bovenop liggen */
+.z-\[9999\] {
+    z-index: 9999 !important;
+}
+
+/* Voorkom dat CodeMirror over de dropdown heen komt */
+.CodeMirror {
+    z-index: 1 !important;
+}
+
+/* De balk waar de tabbladen in zitten moet horizontaal scrollen maar verticaal niks afkappen */
+.no-scrollbar {
+    overflow-x: auto;
+    overflow-y: visible !important;
+}
+
+
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
     width: 8px;

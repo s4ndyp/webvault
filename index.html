@@ -6,7 +6,6 @@
     <title>Site Builder Cloud</title>
     <meta name="permissions-policy" content="clipboard-read=*, clipboard-write=*">
     
-    <!-- CDN Scripts & Styles -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
@@ -20,155 +19,159 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/search/searchcursor.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/search/search.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/search/jump-to-line.min.js"></script>
     
     <script src="tailwind.js"></script>
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body class="h-full text-gray-200 font-sans bg-dark transition-colors duration-300 overflow-hidden">
-    <div id="app" v-cloak class="flex flex-col h-screen relative">
+    <div id="app" v-cloak class="flex h-screen overflow-hidden relative">
         
-        <!-- PROJECT OVERVIEW (MAIN VIEW) -->
-        <div v-if="!projectActive" class="flex-1 flex flex-col p-6 overflow-y-auto bg-dark">
-            <div class="max-w-5xl mx-auto w-full">
-                <div class="flex justify-between items-center mb-8">
-                    <div>
-                        <h1 class="text-3xl font-bold text-white">Mijn Projecten</h1>
-                        <p class="text-gray-400">Beheer je websites in de cloud</p>
+        <aside class="flex flex-col w-72 bg-darkpaper border-r border-gray-700 h-full z-10 shrink-0">
+            <div class="p-6 border-b border-gray-700">
+                <div class="flex items-center gap-3 mb-2">
+                    <div class="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center text-white text-xl shadow-lg">
+                        <i class="fas fa-code"></i>
                     </div>
-                    <div class="flex gap-4">
-                        <div class="text-xs text-gray-500 flex items-center gap-2">
-                            <i class="fas fa-circle text-green-500"></i>
-                            <span>{{ clientId }} @ {{ apiUrl }}</span>
-                        </div>
-                        <button @click="showNewProjectModal = true" class="px-6 py-2 bg-primary hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg transition flex items-center gap-2">
-                            <i class="fas fa-plus"></i> Nieuw Project
-                        </button>
-                    </div>
+                    <h1 class="font-bold text-white truncate" :title="projectActive ? currentProjectName : 'Site Builder'">{{ projectActive ? currentProjectName : 'Site Builder' }}</h1>
                 </div>
-
-                <div v-if="isLoading" class="text-center py-20">
-                    <i class="fas fa-spinner fa-spin text-4xl text-primary mb-4"></i>
-                    <p class="text-gray-400">Projecten laden...</p>
-                </div>
-
-                <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div v-for="proj in projectList" :key="proj._id" class="bg-darkpaper border border-gray-700 rounded-2xl p-6 hover:border-primary transition group relative flex flex-col h-48">
-                        <div class="flex justify-between items-start mb-2">
-                            <div class="w-12 h-12 bg-gray-800 rounded-xl flex items-center justify-center text-primary text-xl group-hover:scale-110 transition">
-                                <i class="fas fa-cube"></i>
-                            </div>
-                            <button @click.stop="deleteProject(proj._id)" class="text-red-400 hover:text-red-300 p-2 opacity-0 group-hover:opacity-100 transition" title="Verwijder Project">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-
-                        <div class="flex items-center gap-2 mb-1">
-                            <h3 class="text-lg font-bold text-white truncate">{{ proj.name || 'Naamloos Project' }}</h3>
-                            <span class="text-xs bg-green-500/10 text-green-500 border border-green-500/20 px-1.5 py-0.5 rounded font-mono">v{{ proj.currentVersion || 1 }}</span>
-                        </div>
-
-                        <p class="text-sm text-gray-400 mb-auto">
-                            Laatst bewerkt {{ formatTimeAgo(proj._updated_at || proj._created_at) }}
-                        </p>
-
-                        <button @click="openProject(proj._id, proj.name)" class="w-full mt-4 py-2 bg-gray-700 hover:bg-primary text-white rounded-lg transition text-sm font-medium">
-                            Openen <i class="fas fa-arrow-right ml-1"></i>
-                        </button>
-                    </div>
-
-                    <div v-if="projectList.length === 0" class="col-span-full text-center py-20 border-2 border-dashed border-gray-700 rounded-2xl text-gray-500">
-                        <i class="fas fa-folder-open text-4xl mb-4 opacity-50"></i>
-                        <p>Nog geen projecten gevonden.</p>
-                    </div>
-                </div>
+                <p class="text-xs text-green-400 flex items-center gap-1">
+                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                    {{ clientId }} @ Online
+                </p>
             </div>
+
+<nav class="flex-1 px-4 py-4 space-y-6 overflow-y-auto no-scrollbar">
+    <div>
+        <div class="flex justify-between items-center mb-2 px-2">
+            <div class="text-xs font-bold text-gray-500 uppercase tracking-wider">Mijn Projecten</div>
+            <button @click="showNewProjectModal = true" class="text-primary hover:text-white transition">
+                <i class="fas fa-plus-circle"></i>
+            </button>
+        </div>
+        <div class="space-y-1">
+<div v-for="proj in projectList" :key="proj._id" class="mb-1">
+    <div 
+        @click="openProject(proj._id, proj.name)"
+        :class="currentProjectId === proj._id ? 'bg-primary/20 text-white border-l-4 border-primary' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200 border-l-4 border-transparent'"
+        class="w-full flex items-center justify-between px-4 py-3 rounded-r-xl transition-all text-sm font-medium cursor-pointer group">
+        
+        <div class="flex items-center gap-2 truncate">
+            <i class="fas fa-cube text-xs opacity-50"></i>
+            <span class="truncate">{{ proj.name }}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-bold">
+                v{{ proj.currentVersion || 1 }}
+            </span>
         </div>
 
-        <!-- EDITOR (UNCHANGED LAYOUT) -->
-        <div v-if="projectActive" class="flex flex-col md:flex-row h-full overflow-hidden">
-            <!-- Sidebar -->
-            <aside class="hidden md:flex flex-col w-72 bg-darkpaper border-r border-gray-700 h-full z-10">
-                <div class="p-6 border-b border-gray-700">
-                    <div class="flex items-center gap-3 mb-2">
-                        <div class="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center text-white text-xl shadow-lg">
-                            <i class="fas fa-code"></i>
-                        </div>
-                        <h1 class="font-bold text-white truncate" :title="currentProjectName">{{ currentProjectName }}</h1>
-                    </div>
-                    <p class="text-xs text-green-400 flex items-center gap-1">
-                        <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                        Online
-                    </p>
+        <div class="flex items-center gap-1">
+            <button @click.stop="toggleVersions(proj._id)" class="text-gray-500 hover:text-primary transition p-1">
+                <i class="fas fa-history text-xs"></i>
+            </button>
+            <button @click.stop="deleteProject(proj._id)" class="text-red-400 opacity-0 group-hover:opacity-100 transition p-1">
+                <i class="fas fa-trash-alt text-xs"></i>
+            </button>
+        </div>
+    </div>
+
+<div v-if="expandedProjectId === proj._id" class="ml-8 mr-4 mt-1 mb-2 space-y-1 bg-dark/30 rounded-lg p-1 border border-gray-800">
+    <div v-for="backup in proj.history" :key="backup.version" 
+         class="group flex justify-between items-center px-3 py-2 text-[11px] text-gray-400 hover:bg-primary/10 hover:text-white rounded cursor-pointer transition">
+        <span @click.stop="restoreVersion(backup, proj._id)" class="flex-1">
+            <i class="fas fa-reply-all mr-2 opacity-50"></i>Versie {{ backup.version }}
+        </span>
+        <button @click.stop="deleteProjectBackup(proj._id, backup.version)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1">
+            <i class="fas fa-trash-alt text-[10px]"></i>
+        </button>
+    </div>
+    
+    <div v-if="!proj.history || proj.history.length === 0" class="px-3 py-2 text-[10px] text-gray-600 italic">
+        Geen vorige versies
+    </div>
+</div>
+</div>
+    
+    </nav>
+
+            <div v-if="projectActive" class="p-4 border-t border-gray-700 space-y-3">
+    <input v-model="saveNote" 
+           placeholder="Wat heb je aangepast?" 
+           class="w-full bg-dark/50 border border-gray-600 text-xs p-2 rounded-lg text-white focus:border-primary outline-none"
+           @keyup.enter="createBackup(false)">
+    
+    <button @click="createBackup(false)" class="w-full py-2 bg-primary hover:bg-indigo-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 text-xs border border-primary/20 shadow-lg">
+        <i class="fas fa-cloud-upload-alt"></i> Opslaan & Backup
+    </button>
+    
+    <div class="grid grid-cols-2 gap-2">
+        <button @click="triggerUpload" class="py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-600/50 font-medium rounded-lg transition flex items-center justify-center gap-2 text-[10px]">
+            <i class="fas fa-upload"></i> Upload
+        </button>
+        <button @click="downloadZip" class="py-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 border border-green-600/50 font-medium rounded-lg transition flex items-center justify-center gap-2 text-[10px]">
+            <i class="fas fa-download"></i> ZIP
+        </button>
+    </div>
+</div>
+        </aside>
+
+        <main class="flex-1 flex flex-col h-full overflow-hidden bg-dark">
+            
+            <div v-if="!projectActive" class="flex-1 flex flex-col items-center justify-center p-8 text-center bg-dark">
+                <div class="w-24 h-24 bg-gray-800 rounded-3xl flex items-center justify-center text-primary text-5xl mb-6 shadow-2xl">
+                    <i class="fas fa-folder-open"></i>
                 </div>
+                <h2 class="text-3xl font-bold text-white mb-2">Welkom bij Site Builder</h2>
+                <p class="text-gray-400 max-w-md mb-8">Selecteer een project in de zijbalk om te beginnen met bewerken, of maak een nieuw project aan.</p>
+                <button @click="showNewProjectModal = true" class="px-8 py-3 bg-primary hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg transition flex items-center gap-2">
+                    <i class="fas fa-plus"></i> Nieuw Project Starten
+                </button>
+            </div>
 
-                <div class="p-4 space-y-2">
-                    <button @click="closeProject" class="w-full py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-medium rounded-xl transition flex items-center justify-center gap-2 text-sm">
-                        <i class="fas fa-arrow-left"></i> Terug naar overzicht
-                    </button>
-                    <button @click="createBackup(false)" class="w-full py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 font-medium rounded-xl transition flex items-center justify-center gap-2 text-sm border border-gray-600">
-                        <i class="fas fa-cloud-upload-alt"></i> Opslaan & Backup
-                    </button>
-                    <button @click="showHistoryModal = true" class="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white font-medium rounded-xl transition flex items-center justify-center gap-2 text-sm border border-gray-700">
-                        <i class="fas fa-history"></i> Geschiedenis
-                    </button>
-                </div>
-
-                <nav class="flex-1 px-4 space-y-1 overflow-y-auto no-scrollbar">
-                    <div class="flex justify-between items-center mb-2 mt-4 px-2">
-                        <div class="text-xs font-bold text-gray-500 uppercase tracking-wider">Project Bestanden</div>
-                        <div class="font-bold text-lg text-green-500 leading-none">v{{ currentVersion }}</div>
-                    </div>
-
-                    <template v-for="file in files" :key="file.name">
-                        <button 
-                            @click="setActiveFile(file.name)" 
-                            :class="activeFileName === file.name ? 'bg-gray-700/50 text-white border-l-4 border-primary' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200 border-l-4 border-transparent'"
-                            class="w-full flex items-center justify-between px-4 py-3 rounded-r-xl transition-all text-sm font-medium mb-1 group">
-                            <span class="flex items-center gap-3">
-                                <i :class="getFileIcon(file.name)" class="text-lg w-5 text-center"></i>
-                                {{ file.name }}
-                            </span>
-                            <div class="flex items-center gap-2">
-                                <span v-if="file.lastModified" class="text-10px text-gray-500 font-mono italic">{{ formatTimeAgo(file.lastModified) }}</span>
-                                <span v-if="file.content.length > 0" class="text-10px text-green-400">
-                                    <i class="fas fa-check"></i>
-                                </span>
-                            </div>
-                        </button>
-                    </template>
-                </nav>
-
-                <div class="p-4 border-t border-gray-700 relative">
-                    <input type="file" ref="fileInput" multiple @change="handleFileUpload" class="hidden">
-                    <button @click="triggerUpload" class="w-full py-2 mb-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 border border-blue-600/50 font-medium rounded-lg transition flex items-center justify-center gap-2 text-xs">
-                        <i class="fas fa-upload"></i> Upload Bestanden
-                    </button>
-                    <button @click="downloadZip" class="w-full py-2 bg-green-600/20 hover:bg-green-600/30 text-green-400 border border-green-600/50 font-medium rounded-lg transition flex items-center justify-center gap-2 text-xs">
-                        <i class="fas fa-download"></i> Download ZIP
-                    </button>
-                </div>
-            </aside>
-
-            <!-- Main Editor Area -->
-            <main class="flex-1 flex flex-col h-full overflow-hidden relative bg-dark">
+            <div v-else class="flex flex-col h-full overflow-hidden">
                 <div class="bg-darkpaper/80 backdrop-blur-md p-4 flex justify-between items-center z-20 border-b border-gray-700">
                     <div class="flex items-center gap-3">
                         <button @click="showMobileMenu = !showMobileMenu" class="md:hidden text-gray-300">
                             <i class="fas fa-bars"></i>
                         </button>
-                        <h2 class="font-bold text-white truncate max-w-150px">{{ activeFileName }}</h2>
+                        <h2 class="font-bold text-white truncate max-w-[200px]">{{ currentProjectName }}</h2>
                     </div>
 
-                    <div class="hidden md:block">
-                        <h2 class="text-xl font-bold text-white flex items-center gap-3">
-                            <i :class="getFileIcon(activeFileName)" class="text-primary"></i>
-                            {{ activeFileName }}
-                        </h2>
-                    </div>
+ <div v-if="projectActive && viewMode !== 'preview'" class="flex items-center gap-4 bg-gray-800/50 px-4 py-1.5 rounded-2xl border border-gray-700 shadow-inner">
+        <div class="flex items-center gap-1 border-r border-gray-700 pr-3">
+            <button @click="undo" class="p-1.5 text-gray-400 hover:text-white transition" title="Ongedaan maken (Ctrl+Z)">
+                <i class="fas fa-undo"></i>
+            </button>
+            <button @click="redo" class="p-1.5 text-gray-400 hover:text-white transition" title="Opnieuw (Ctrl+Y)">
+                <i class="fas fa-redo"></i>
+            </button>
+        </div>
 
+        <div class="flex items-center gap-2">
+            <div class="relative">
+                <input v-model="searchQuery" @input="findNext" @keyup.enter="findNext"
+                       placeholder="Zoeken..." 
+                       class="bg-dark border border-gray-600 text-xs px-3 py-1 rounded-lg w-32 focus:w-48 transition-all outline-none focus:border-primary">
+                <span class="absolute right-2 top-1 text-[10px] text-gray-500">{{ searchMatches }}</span>
+            </div>
+            
+            <input v-model="replaceQuery" 
+                   placeholder="Vervangen door..." 
+                   class="bg-dark border border-gray-600 text-xs px-3 py-1 rounded-lg w-32 outline-none focus:border-primary">
+            
+            <button @click="replaceAll" class="text-[10px] bg-gray-700 hover:bg-primary text-white px-2 py-1 rounded transition font-bold">
+                REPLACE ALL
+            </button>
+        </div>
+       </div>           
+           
+                    
+                    
+                    
                     <div class="flex gap-2 items-center">
-                        <button @click="insertVersionComment" class="bg-gray-700 hover:bg-gray-600 text-green-400 hover:text-green-300 px-3 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-sm border border-gray-600" title="Huidige versie invoegen">
+                        <button @click="insertVersionComment" class="bg-gray-700 hover:bg-gray-600 text-green-400 hover:text-green-300 px-3 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-sm border border-gray-600">
                             <i class="fas fa-tag"></i>
                             <span class="hidden xl:inline">v{{ currentVersion }}</span>
                         </button>
@@ -176,138 +179,183 @@
                         <div class="h-6 w-px bg-gray-700 mx-1"></div>
 
                         <div class="flex bg-gray-700 rounded-xl p-0.5 border border-gray-600">
-                            <button @click="setViewMode('code')" :class="viewMode === 'code' ? 'bg-primary text-white shadow-sm' : 'text-gray-400 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-sm" title="Alleen Code">
+                            <button @click="setViewMode('code')" :class="viewMode === 'code' ? 'bg-primary text-white shadow-sm' : 'text-gray-400 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-sm">
                                 <i class="fas fa-code"></i>
                             </button>
-                            <button @click="setViewMode('split')" :class="viewMode === 'split' ? 'bg-primary text-white shadow-sm' : 'text-gray-400 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-sm" title="Splits">
+                            <button @click="setViewMode('split')" :class="viewMode === 'split' ? 'bg-primary text-white shadow-sm' : 'text-gray-400 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-sm">
                                 <i class="fas fa-columns"></i>
                             </button>
-                            <button @click="setViewMode('preview')" :class="viewMode === 'preview' ? 'bg-primary text-white shadow-sm' : 'text-gray-400 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-sm" title="Alleen Voorbeeld">
+                            <button @click="setViewMode('preview')" :class="viewMode === 'preview' ? 'bg-primary text-white shadow-sm' : 'text-gray-400 hover:text-white'" class="px-3 py-1.5 rounded-lg transition flex items-center gap-2 text-sm">
                                 <i class="fas fa-eye"></i>
                             </button>
                         </div>
-
-                        <div class="h-6 w-px bg-gray-700 mx-1"></div>
-
-                        <button @click="clearContent" class="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-3 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-sm" title="Wissen">
-                            <i class="fas fa-trash-alt"></i>
-                        </button>
-                        <button @click="pasteFromClipboard" class="bg-primary hover:bg-indigo-600 text-white px-3 py-2 rounded-xl font-bold shadow-lg transition flex items-center gap-2 text-sm">
-                            <i class="fas fa-paste"></i>
+                        
+                        <button @click="showHistoryModal = true" class="p-2 text-gray-400 hover:text-white transition" title="Geschiedenis">
+                            <i class="fas fa-history"></i>
                         </button>
                     </div>
                 </div>
 
-                <!-- Editor & Preview Split -->
+<div class="flex bg-darkpaper border-b border-gray-700 overflow-x-auto no-scrollbar shrink-0 h-12">
+    
+    <div v-for="tab in openTabs" :key="tab"
+        @click="setActiveFile(tab)"
+        :class="activeFileName === tab ? 'bg-dark border-t-2 border-primary text-white shadow-[0_-4px_10px_rgba(99,102,241,0.1)]' : 'text-gray-400 hover:bg-gray-800 border-t-2 border-transparent'"
+        class="flex items-center gap-2 px-4 py-2 cursor-pointer transition-all text-sm font-medium whitespace-nowrap group min-w-[170px] justify-between relative border-r border-gray-700">
+        
+<div class="flex items-center gap-2">
+    <i :class="getFileIcon(tab)" class="text-xs"></i>
+    <div class="flex flex-col leading-none">
+        <div class="flex items-center gap-2">
+            <span class="text-sm font-semibold">{{ tab }}</span>
+            <button v-if="files.find(f => f.name === tab)?.fileHistory?.length > 0"
+                    @click.stop="toggleFileHistory(tab)"
+                    class="text-xs text-gray-500 hover:text-primary transition p-0.5">
+                <i class="fas fa-history"></i>
+            </button>
+        </div>
+        <span class="text-[9px] text-gray-500 font-bold">v{{ getFileVersion(tab) }}</span>
+    </div>
+</div>
+
+<div class="flex items-center gap-2">
+    <input v-if="dirtyFiles.has(tab)" 
+           v-model="saveNote" 
+           placeholder="Omschrijving..." 
+           @keyup.enter="saveSingleFile(tab)"
+           class="bg-dark/50 border border-gray-600 text-[10px] px-2 py-0.5 rounded w-20 focus:w-32 transition-all focus:border-primary outline-none text-white">
+    
+    <button v-if="dirtyFiles.has(tab)" 
+            @click.stop="saveSingleFile(tab)" 
+            class="bg-green-600 hover:bg-green-500 text-white text-[9px] px-2 py-1 rounded font-bold shadow-lg flex items-center gap-1">
+        <i class="fas fa-check"></i> SAVE
+    </button>
+    <i @click.stop="closeTab(tab)" class="fas fa-times text-[10px] opacity-0 group-hover:opacity-100 hover:text-red-400 p-1"></i>
+</div>
+
+<div v-if="activeFileHistoryTab === tab" 
+     class="absolute top-full left-0 mt-0 w-64 bg-[#1e293b] border border-gray-600 rounded-b-xl shadow-2xl z-[9999] overflow-hidden">
+    <div class="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+        <span>Bestandshistorie</span>
+        <i class="fas fa-times cursor-pointer hover:text-white" @click.stop="toggleFileHistory(null)"></i>
+    </div>
+    <div class="max-h-60 overflow-y-auto no-scrollbar">
+        <div v-for="h in files.find(f => f.name === tab).fileHistory" :key="h.subVersion"
+             class="group px-4 py-3 text-[11px] hover:bg-primary/20 flex justify-between items-center text-gray-200 border-b border-gray-700/50 last:border-0 transition-colors">
+            <div @click.stop="restoreFileSubVersion(tab, h)" class="flex flex-col flex-1 cursor-pointer">
+                <span class="font-bold text-white">Versie .{{ h.subVersion }}</span>
+                <span class="text-[9px] opacity-60">{{ h.timestamp }}</span>
+            </div>
+            <button @click.stop="deleteFileHistoryItem(tab, h.subVersion)" class="text-gray-600 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition">
+                <i class="fas fa-trash-alt text-[10px]"></i>
+            </button>
+        </div>
+        <div v-if="!files.find(f => f.name === tab)?.fileHistory?.length" class="p-4 text-center text-[10px] text-gray-500 italic">
+            Geen historie beschikbaar
+        </div>
+    </div>
+</div>
+    </div> <div @click="showNewFileModal = true" 
+         class="flex items-center justify-center px-5 py-2 text-gray-400 hover:bg-gray-800 hover:text-white cursor-pointer border-r border-gray-700 transition-all shrink-0">
+        <i class="fas fa-plus"></i>
+   
+
+
+
+
+
+                <div class="flex items-center gap-2">
+                    <button v-if="dirtyFiles.has(tab)" @click.stop="saveSingleFile(tab)" 
+                        class="bg-green-600 hover:bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded font-bold shadow-lg animate-pulse">
+                        SAVE
+                    </button>
+                    <i @click.stop="closeTab(tab)" class="fas fa-times text-[10px] opacity-0 group-hover:opacity-100 hover:text-red-400 p-1"></i>
+                </div>
+            </div>
+        </div>
                 <div class="flex-1 flex overflow-hidden relative">
-                    <div v-show="viewMode !== 'preview'" :style="{ width: viewMode === 'split' ? '50%' : '100%' }" class="flex flex-col bg-darkpaper transition-all duration-300">
-                        <div class="bg-gray-800/50 border-b border-gray-700 p-2 flex justify-between items-center text-xs text-gray-400 px-4">
+                    <div v-show="viewMode !== 'preview'" :style="{ width: viewMode === 'split' ? '50%' : '100%' }" class="flex flex-col bg-darkpaper transition-all duration-300 border-r border-gray-800">
+                        <div class="bg-gray-800/30 border-b border-gray-700/50 p-2 flex justify-between items-center text-[10px] text-gray-500 px-4 uppercase tracking-widest font-bold">
                             <span>Code Editor</span>
-                            <span v-if="savedMessage" class="text-green-400 animate-pulse">{{ savedMessage }}</span>
+                            <span v-if="savedMessage" class="text-green-400 animate-pulse normal-case tracking-normal font-normal">{{ savedMessage }}</span>
                         </div>
                         <div ref="editorContainer" class="flex-1 w-full h-full text-base"></div>
                     </div>
 
                     <div v-show="viewMode !== 'code'" :style="{ width: viewMode === 'split' ? '50%' : '100%' }" class="hidden md:flex flex-1 w-full flex flex-col bg-slate-900 relative transition-all duration-300">
-                        <div class="bg-red-900 border-b border-red-800 p-2 flex justify-between items-center text-xs text-white px-4">
+                        <div class="bg-indigo-900/20 border-b border-indigo-500/10 p-2 flex justify-between items-center text-[10px] text-indigo-400/60 px-4 uppercase tracking-widest font-bold">
                             <span>Live Voorbeeld</span>
                             <span class="text-10px uppercase font-bold tracking-wider">Browser Render</span>
                         </div>
                         <iframe :srcdoc="previewContent" class="w-full h-full border-none bg-slate-900" sandbox="allow-scripts allow-modals allow-same-origin allow-forms"></iframe>
                     </div>
                 </div>
-            </main>
-        </div>
+   <!--         </div> -->
+        </main>
 
-        <!-- NEW PROJECT MODAL (UNCHANGED) -->
-        <div v-if="showNewProjectModal" class="fixed inset-0 bg-black/80 z-150 flex items-center justify-center backdrop-blur-sm p-4">
+        <div v-if="showNewProjectModal" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center backdrop-blur-sm p-4">
             <div class="bg-darkpaper w-full max-w-md rounded-2xl border border-gray-700 shadow-2xl p-6">
                 <h3 class="font-bold text-lg text-white mb-4">Nieuw Project Starten</h3>
-
                 <div class="mb-4">
                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Project Naam</label>
                     <input v-model="newProjectName" type="text" class="w-full bg-dark border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" placeholder="Mijn Geweldige Website" ref="projectNameInput">
                 </div>
-
                 <div class="flex justify-end gap-2">
-                    <button @click="showNewProjectModal = false" class="px-4 py-2 text-gray-400 hover:text-white">
-                        Annuleren
-                    </button>
-                    <button @click="createProject" class="px-6 py-2 bg-primary hover:bg-indigo-600 text-white rounded-lg font-bold" :disabled="!newProjectName">
-                        Aanmaken
-                    </button>
+                    <button @click="showNewProjectModal = false" class="px-4 py-2 text-gray-400 hover:text-white">Annuleren</button>
+                    <button @click="createProject" class="px-6 py-2 bg-primary hover:bg-indigo-600 text-white rounded-lg font-bold" :disabled="!newProjectName">Aanmaken</button>
                 </div>
             </div>
         </div>
 
-        <!-- HISTORY MODAL (UNCHANGED) -->
-        <div v-if="showHistoryModal" class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center backdrop-blur-sm p-4" @click.self="showHistoryModal = false">
-            <div class="bg-darkpaper w-full max-w-2xl rounded-2xl border border-gray-700 shadow-2xl p-6 flex flex-col max-h-85vh">
-                <h3 class="font-bold text-lg text-white mb-2 flex items-center gap-2">
-                    <i class="fas fa-history text-primary"></i>
-                    Versie Geschiedenis
-                </h3>
-
+        <div v-if="showHistoryModal" class="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center backdrop-blur-sm p-4" @click.self="showHistoryModal = false">
+            <div class="bg-darkpaper w-full max-w-2xl rounded-2xl border border-gray-700 shadow-2xl p-6 flex flex-col max-h-[85vh]">
+                <h3 class="font-bold text-lg text-white mb-2 flex items-center gap-2"><i class="fas fa-history text-primary"></i> Versie Geschiedenis</h3>
                 <div class="flex-1 overflow-y-auto bg-dark/50 rounded-lg border border-gray-700/50 p-2 mb-4">
                     <table class="w-full text-left text-sm">
                         <thead>
-                            <tr class="text-gray-500 border-b border-gray-700">
-                                <th class="p-2">Versie</th>
-                                <th class="p-2">Tijd</th>
-                                <th class="p-2 text-right">Actie</th>
-                            </tr>
+                            <tr class="text-gray-500 border-b border-gray-700"><th class="p-2">Versie</th><th class="p-2">Tijd</th><th class="p-2 text-right">Actie</th></tr>
                         </thead>
                         <tbody>
                             <tr v-for="backup in history" :key="backup.version" class="border-b border-gray-700/30 hover:bg-white/5">
                                 <td class="p-2 font-bold text-white">v{{ backup.version }}</td>
                                 <td class="p-2 text-gray-400">{{ backup.timestamp }}</td>
                                 <td class="p-2 text-right flex justify-end gap-2">
-                                    <button v-if="backup.version !== currentVersion" @click="restoreVersion(backup)" class="text-primary hover:text-white px-2 py-1">
-                                        <i class="fas fa-undo"></i>
-                                    </button>
-                                    <button @click="deleteBackup(backup.version)" class="text-red-500 hover:text-white px-2 py-1">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
+                                    <button v-if="backup.version !== currentVersion" @click="restoreVersion(backup)" class="text-primary hover:text-white px-2 py-1"><i class="fas fa-undo"></i></button>
+                                    <button @click="deleteBackup(backup.version)" class="text-red-500 hover:text-white px-2 py-1"><i class="fas fa-trash"></i></button>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-
-                <div class="flex justify-end">
-                    <button @click="showHistoryModal = false" class="px-4 py-2 bg-gray-700 rounded-lg">
-                        Sluiten
-                    </button>
-                </div>
+                <div class="flex justify-end"><button @click="showHistoryModal = false" class="px-4 py-2 bg-gray-700 rounded-lg">Sluiten</button></div>
             </div>
         </div>
-
-        <!-- MOBILE MENU (UNCHANGED) -->
-        <div v-if="showMobileMenu" class="md:hidden fixed inset-0 z-50 bg-dark/95 p-6">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-white">Menu</h2>
-                <button @click="showMobileMenu = false">
-                    <i class="fas fa-times text-white text-xl"></i>
-                </button>
-            </div>
-
-            <div class="space-y-4">
-                <button @click="closeProject(); showMobileMenu = false" class="w-full py-3 bg-gray-800 text-white rounded-xl">
-                    Terug naar Projecten
-                </button>
-                <button @click="createBackup(false); showMobileMenu = false" class="w-full py-3 bg-gray-700 text-white rounded-xl">
-                    Opslaan
-                </button>
-                <button @click="showHistoryModal = true; showMobileMenu = false" class="w-full py-3 bg-gray-700 text-white rounded-xl">
-                    Geschiedenis
-                </button>
-            </div>
+            <div v-if="showNewFileModal" class="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center backdrop-blur-sm p-4">
+    <div class="bg-darkpaper w-full max-w-sm rounded-2xl border border-gray-700 shadow-2xl p-6">
+        <h3 class="font-bold text-lg text-white mb-4 italic text-primary">Nieuw Bestand Toevoegen</h3>
+        <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Naam + extensie</label>
+            <input v-model="newFileName" type="text" 
+                   class="w-full bg-dark border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" 
+                   placeholder="index.html, styles.css..."
+                   @keyup.enter="createNewFile"
+                   ref="newFileNameInput">
+        </div>
+        <div class="mb-4">
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Start Omschrijving (Optioneel)</label>
+            <input v-model="saveNote" type="text" 
+                   class="w-full bg-dark border border-gray-700 rounded-lg p-3 text-white focus:border-primary focus:outline-none" 
+                   placeholder="bijv. Eerste opzet van de pagina">
+        </div>
+        <div class="flex justify-end gap-2">
+            <button @click="showNewFileModal = false; newFileName = ''; saveNote = ''" class="px-4 py-2 text-gray-400 hover:text-white">Annuleren</button>
+            <button @click="createNewFile" class="px-6 py-2 bg-primary hover:bg-indigo-600 text-white rounded-lg font-bold" :disabled="!newFileName">Bestand Maken</button>
         </div>
     </div>
+</div>
+    </div>
 
-    <!-- ✅ KLASSIEKE SCRIPT LOADING (geen modules, geen CORS issues!) -->
-    <script src="datagateway.js"></script>
-    <script src="offline_manager.js"></script>
+    <script src="offline_managerv2.js"></script>
     <script src="render.js"></script>
     <script src="core.js"></script>
 </body>

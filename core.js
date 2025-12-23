@@ -65,7 +65,20 @@ createApp({
         const currentTime = ref(Date.now());
         const files = ref([]);
         const history = ref([]);
-        
+        const expandedProjectId = ref(null);
+        const dirtyFiles = ref(new Set());
+        const activeFileHistoryTab = ref(null);
+        const saveNote = ref('');
+		const lastRestoredVersion = ref(null);
+        const showNewFileModal = ref(false); // Houdt bij of het venster open is
+		const newFileName = ref('');         // De naam die je typt
+        const searchQuery = ref('');
+		const replaceQuery = ref('');
+		const searchMatches = ref('');
+
+        const toggleFileHistory = (tab) => {
+    	activeFileHistoryTab.value = activeFileHistoryTab.value === tab ? null : tab;
+		};
         // Config display
         const clientId = ref(CLIENT_ID);
         const apiUrl = ref(API_URL);
@@ -89,10 +102,12 @@ createApp({
             }, 60000);
         });
 
-        // --- CODEMIRROR EDITOR SETUP ---
+// --- CODEMIRROR EDITOR SETUP ---
         const initEditor = () => {
             if (!editorContainer.value) return;
+            
             editorContainer.value.innerHTML = '';
+            
             editorInstance = CodeMirror(editorContainer.value, {
                 value: activeFile.value ? activeFile.value.content : '',
                 mode: 'htmlmixed',
@@ -103,14 +118,31 @@ createApp({
                 tabSize: 4
             });
 
-            editorInstance.on('change', (cm) => {
-                if (activeFile.value) {
-                    const val = cm.getValue();
-                    if (activeFile.value.content !== val) {
-                        activeFile.value.content = val;
+            if (editorInstance) {
+                editorInstance.on('change', (cm) => {
+                    if (!activeFileName.value || !activeFile.value) return;
+
+                    const currentVal = cm.getValue();
+                    const file = files.value.find(f => f.name === activeFileName.value);
+
+                    if (file) {
+                        // 1. Zorg dat savedContent bestaat (referentiepunt voor de save-knop)
+                        if (file.savedContent === undefined) {
+                            file.savedContent = file.content;
+                        }
+
+                        // 2. Vergelijk met savedContent (voor de SAVE knop)
+                        if (currentVal !== file.savedContent) {
+                            file.content = currentVal; 
+                            dirtyFiles.value.add(activeFileName.value);
+                        } else {
+                            // Als je terug-undo't naar de originele staat, gaat de knop weg
+                            dirtyFiles.value.delete(activeFileName.value);
+                        }
+                        updatePreview();
                     }
-                }
-            });
+                });
+            }
         };
 
         const updateEditorMode = (filename) => {
@@ -121,6 +153,7 @@ createApp({
             editorInstance.setOption('mode', mode);
         };
 
+        // --- WATCHERS ---
         watch(activeFileName, (newVal) => {
             if (newVal && editorInstance && activeFile.value) {
                 const currentContent = editorInstance.getValue();
@@ -129,6 +162,12 @@ createApp({
                 }
                 updateEditorMode(newVal);
                 editorInstance.clearHistory();
+                
+                // Bij wisselen van tabblad: zorg dat savedContent bekend is
+                const file = files.value.find(f => f.name === newVal);
+                if (file && file.savedContent === undefined) {
+                    file.savedContent = file.content;
+                }
             }
         });
 
@@ -149,25 +188,19 @@ createApp({
                 return f ? f.content : '';
             };
 
-            const html = getFileContent('index.html');
-            const css = getFileContent('styles.css');
-            const tailwindConfig = getFileContent('tailwind.js');
-            const coreJs = getFileContent('core.js');
-            const renderJs = getFileContent('render.js');
-
             const completeHtml = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>${tailwindConfig}</script>
-    <style>${css}</style>
+    <script>${getFileContent('tailwind.js')}</script>
+    <style>${getFileContent('styles.css')}</style>
 </head>
 <body>
-    ${html}
-    <script>${coreJs}</script>
-    <script>${renderJs}</script>
+    ${getFileContent('index.html')}
+    <script>${getFileContent('core.js')}</script>
+    <script>${getFileContent('render.js')}</script>
 </body>
 </html>`;
             previewContent.value = completeHtml;
@@ -182,6 +215,182 @@ createApp({
             }
         };
 
+        const toggleVersions = (id) => {
+            expandedProjectId.value = expandedProjectId.value === id ? null : id;
+        }; 
+
+        const getFileVersion = (fileName) => {
+            const file = files.value.find(f => f.name === fileName);
+            if (!file) return `${currentVersion.value}.0`;
+            return `${currentVersion.value}.${file.subVersion || 0}`;
+        };
+
+        const saveSingleFile = async (fileName) => {
+            const fileIndex = files.value.findIndex(f => f.name === fileName);
+            if (fileIndex === -1) return;
+
+            const file = files.value[fileIndex];
+            if (!file.fileHistory) file.fileHistory = [];
+            
+            file.fileHistory.unshift({
+                subVersion: file.subVersion || 0,
+                content: file.content,
+                note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Handmatige wijziging'),
+                timestamp: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+            });
+
+            if (file.fileHistory.length > 20) file.fileHistory.pop();
+            file.subVersion = (file.subVersion || 0) + 1;
+            
+            // UPDATE DE "CLEAN" STATE
+            file.savedContent = file.content; 
+            dirtyFiles.value.delete(fileName);
+            saveNote.value = ''; 
+            
+            await updateProjectInDB();
+
+            if (editorInstance && activeFileName.value === fileName) {
+                editorInstance.clearHistory();
+            }
+
+            showToast(`${fileName} bijgewerkt naar v${getFileVersion(fileName)}`, 'success');
+        };
+
+        const restoreFileSubVersion = (fileName, historyItem) => {
+            const file = files.value.find(f => f.name === fileName);
+            if (file) {
+                file.content = historyItem.content;
+                file.savedContent = historyItem.content; // Herstel is nu de nieuwe 'clean' state
+                file.subVersion = historyItem.subVersion;
+                
+                if (activeFileName.value === fileName && editorInstance) {
+                    editorInstance.setValue(file.content);
+                    editorInstance.clearHistory();
+                }
+                
+                updatePreview();
+                showToast(`${fileName} hersteld`, 'info');
+                activeFileHistoryTab.value = null; 
+            }
+        };
+
+        const updateProjectInDB = async () => {
+            if (!currentProjectId.value) return;
+            const project = {
+                _id: currentProjectId.value,
+                name: currentProjectName.value,
+                files: JSON.parse(JSON.stringify(files.value)),
+                history: history.value,
+                currentVersion: currentVersion.value
+            };
+            await manager.saveSmartDocument('projects', project);
+            await refreshProjectList();
+        };      
+
+        const deleteProjectBackup = async (projectId, version) => {
+            if (!confirm(`Verwijder versie ${version}?`)) return;
+            const proj = projectList.value.find(p => p._id === projectId);
+            if (proj && proj.history) {
+                proj.history = proj.history.filter(h => h.version !== version);
+                await manager.saveSmartDocument('projects', proj);
+                await refreshProjectList();
+                showToast(`Projectversie ${version} verwijderd`, 'info');
+            }
+        };
+
+        const deleteFileHistoryItem = async (fileName, subVersion) => {
+            if (!confirm(`Verwijder versie .${subVersion}?`)) return;
+            const file = files.value.find(f => f.name === fileName);
+            if (file && file.fileHistory) {
+                file.fileHistory = file.fileHistory.filter(h => h.subVersion !== subVersion);
+                await updateProjectInDB(); 
+                showToast(`Bestandversie verwijderd`, 'info');
+            }
+        };     
+
+        // --- UNDO / REDO ---
+        const undo = () => { if (editorInstance) editorInstance.undo(); };
+        const redo = () => { if (editorInstance) editorInstance.redo(); };
+
+        // --- ZOEK & VERVANG ---
+        const findNext = () => {
+            if (!editorInstance || !searchQuery.value) return;
+            // CodeMirror search addon moet geladen zijn voor getSearchCursor
+            if (editorInstance.getSearchCursor) {
+                const cursor = editorInstance.getSearchCursor(searchQuery.value);
+                if (cursor.findNext()) {
+                    editorInstance.setSelection(cursor.from(), cursor.to());
+                    editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 20);
+                }
+            } else {
+                // Fallback als addon niet geladen is
+                const content = editorInstance.getValue();
+                const index = content.indexOf(searchQuery.value);
+                if (index !== -1) {
+                    const pos = editorInstance.posFromIndex(index);
+                    const endPos = editorInstance.posFromIndex(index + searchQuery.value.length);
+                    editorInstance.setSelection(pos, endPos);
+                }
+            }
+        };
+
+        const replaceAll = () => {
+            if (!editorInstance || !searchQuery.value) return;
+            const content = editorInstance.getValue();
+            const newContent = content.split(searchQuery.value).join(replaceQuery.value);
+            editorInstance.setValue(newContent);
+            showToast('Alles vervangen', 'success');
+        };
+        
+// Zorg dat we bij het OPENEN van een file of project de 'originalContent' vastleggen
+const setActiveFileWithCleanCheck = (name) => {
+    setActiveFile(name);
+    const file = files.value.find(f => f.name === name);
+    if (file && !file.originalContent) {
+        file.originalContent = file.content;
+    }
+};        
+        
+        
+        
+watch(searchQuery, (newQuery) => {
+    if (!editorInstance) return;
+
+    if (editorInstance.state.searchOverlay) {
+        editorInstance.removeOverlay(editorInstance.state.searchOverlay);
+    }
+
+    if (!newQuery || newQuery.length < 2) {
+        searchMatches.value = "";
+        return;
+    }
+
+    editorInstance.state.searchOverlay = {
+        token: function(stream) {
+            // Maak een regex die hoofdlettergevoeligheid negeert
+            const query = newQuery.toLowerCase();
+            
+            // Kijk of de huidige tekst in de stream begint met onze zoekterm
+            if (stream.string.toLowerCase().slice(stream.pos).indexOf(query) == 0) {
+                // We hebben een match! Markeer het aantal karakters van de zoekterm
+                for (var i = 0; i < query.length; i++) stream.next();
+                return "searching"; // Geef de class terug
+            }
+
+            // Geen match? Ga naar het volgende karakter
+            stream.next();
+        }
+    };
+
+    editorInstance.addOverlay(editorInstance.state.searchOverlay);
+
+    // Matches tellen (blijft hetzelfde)
+    const content = editorInstance.getValue();
+    const count = (content.toLowerCase().split(newQuery.toLowerCase()).length - 1);
+    searchMatches.value = count > 0 ? `${count} gevonden` : "0 gevonden";
+});
+        
+        
         // --- VERSIE INSERTIE ---
         const insertVersionComment = () => {
             if (!activeFile.value || !editorInstance) return;
@@ -253,38 +462,39 @@ createApp({
             }
         };
 
-        const openProject = async (projectId, projectName) => {
-            if (!manager) return;
-            isLoading.value = true;
-            try {
-                // Haal project detail op via OfflineManager
-                const allProjects = await manager.getSmartCollection('projects');
-                const projectData = allProjects.find(p => p._id === projectId);
-                
-                if (projectData) {
-                    currentProjectId.value = projectData._id;
-                    currentProjectName.value = projectData.name || projectName;
-                    files.value = projectData.files || [];
-                    history.value = projectData.history || [];
-                    currentVersion.value = projectData.currentVersion || 1;
-                    highestVersion.value = projectData.highestVersion || 1;
-                    projectActive.value = true;
-                    activeFileName.value = 'index.html';
-                    
-                    nextTick(() => {
-                        initEditor();
-                        updatePreview();
-                    });
-                } else {
-                    showToast('Project data leeg', 'error');
-                }
-            } catch (e) {
-                console.error(e);
-                showToast('Fout bij openen project', 'error');
-            } finally {
-                isLoading.value = false;
-            }
-        };
+// --- GEWIJZIGDE FUNCTIE: openProject ---
+const openProject = async (projectId, projectName) => {
+    if (!manager) return;
+    isLoading.value = true;
+    try {
+        const allProjects = await manager.getSmartCollection('projects');
+        const projectData = allProjects.find(p => p._id === projectId);
+        
+        if (projectData) {
+            currentProjectId.value = projectData._id;
+            currentProjectName.value = projectData.name || projectName;
+            files.value = projectData.files || [];
+            history.value = projectData.history || [];
+            currentVersion.value = projectData.currentVersion || 1;
+            highestVersion.value = projectData.highestVersion || 1;
+            projectActive.value = true;
+            
+            // OPEN ALLE BESTANDEN ALS TABBLADEN
+            openTabs.value = files.value.map(f => f.name);
+            activeFileName.value = 'index.html'; // Standaard focus op index.html
+            
+            nextTick(() => {
+                initEditor();
+                updatePreview();
+            });
+        }
+    } catch (e) {
+        console.error(e);
+        showToast('Fout bij openen project', 'error');
+    } finally {
+        isLoading.value = false;
+    }
+};
 
         const closeProject = async () => {
             projectActive.value = false;
@@ -399,38 +609,131 @@ createApp({
         showToast('Fout bij opslaan!', 'error');
     }
 };
-const createBackup = async (isInitial = false) => {
-    if (!projectActive.value) return;
+const createBackup = async (isAuto = false) => {
+    isLoading.value = true;
+    try {
+        // 1. Maak de snapshot van de huidige staat
+        const snapshot = JSON.parse(JSON.stringify(files.value));
+        
+        // 2. DOORTEL-LOGICA: Zoek het hoogste nummer ooit gebruikt in de geschiedenis
+        const highestInHistory = history.value.length > 0 
+            ? Math.max(...history.value.map(h => h.version)) 
+            : currentVersion.value;
+        
+        // 3. Maak het backup-record van de huidige werkversie
+        const backupRecord = {
+            version: currentVersion.value,
+            // Gebruik de automatische "Herstart vanaf..." tekst of de handmatige noot
+            note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Project Backup'),
+            timestamp: new Date().toLocaleTimeString('nl-NL', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            }),
+            files: snapshot
+        };
 
-    if (!isInitial) {
-        // Verhoog het nummer VOORDAT je de snapshot maakt
-        highestVersion.value++; 
-        currentVersion.value = highestVersion.value;
-    }
+        // 4. Voeg toe aan geschiedenis
+        history.value.unshift(backupRecord);
 
-    const snapshot = JSON.parse(JSON.stringify(files.value));
-    const backupRecord = {
-        version: currentVersion.value, // Dit pakt nu het opgehoogde nummer
-        timestamp: new Date().toLocaleTimeString('nl-NL', { 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit' 
-        }),
-        files: snapshot
-    };
+        // 5. BEPAAL DE VOLGENDE VERSIE: Altijd hoger dan wat er al was
+        // Dit voorkomt dubbele nummers na een herstel
+        currentVersion.value = Math.max(currentVersion.value, highestInHistory) + 1;
+        
+        // 6. Reset bestanden voor de nieuwe hoofdversie
+        files.value.forEach(f => {
+            f.subVersion = 0;
+            // We laten fileHistory van het bestand zelf intact
+        });
+        
+        if (dirtyFiles.value) {
+            dirtyFiles.value.clear();
+        }
 
-    history.value.unshift(backupRecord);
-    await saveToCloud(isInitial);
+        // 7. Reset de tijdelijke variabelen
+        saveNote.value = '';
+        lastRestoredVersion.value = null;
 
-    if (!isInitial) {
-        showToast(`Backup v${currentVersion.value}`, 'success');
+        // 8. Opslaan in database
+        await updateProjectInDB();
+
+        if (!isAuto) {
+            showToast(`v${backupRecord.version} opgeslagen. Nieuwe werkversie: v${currentVersion.value}`, 'success');
+        }
+    } catch (error) {
+        console.error("Backup fout:", error);
+        showToast("Fout bij maken backup", "error");
+    } finally {
+        isLoading.value = false;
     }
 };
 
-        const setActiveFile = (name) => {
-            activeFileName.value = name;
-        };
+        
+  // --- NIEUWE STATE ---
+const openTabs = ref([]); // Houdt bij welke bestanden open staan als tabbladen      
+        
+        
+ // --- NIEUWE FUNCTIE: closeTab ---
+const closeTab = (name) => {
+    openTabs.value = openTabs.value.filter(t => t !== name);
+    // Als we het actieve tabblad sluiten, kies een andere of zet op null
+    if (activeFileName.value === name) {
+        activeFileName.value = openTabs.value.length > 0 ? openTabs.value[0] : null;
+    }
+};
 
+   
+ const createNewFile = async () => {
+    if (!newFileName.value) return;
+    
+    // Check of bestand al bestaat
+    const exists = files.value.some(f => f.name.toLowerCase() === newFileName.value.toLowerCase());
+    if (exists) {
+        showToast('Bestand bestaat al!', 'error');
+        return;
+    }
+
+    // Maak het nieuwe bestandsobject aan
+    const newFile = {
+        name: newFileName.value,
+        content: '',
+        subVersion: 0,
+        fileHistory: [],
+        lastModified: Date.now()
+    };
+
+    // Voeg toe aan de project bestanden
+    files.value.push(newFile);
+    
+    // Voeg toe aan de open tabbladen en maak actief
+    if (!openTabs.value.includes(newFileName.value)) {
+        openTabs.value.push(newFileName.value);
+    }
+    setActiveFile(newFileName.value);
+
+    // Reset en sluit modal
+    showNewFileModal.value = false;
+    newFileName.value = '';
+    
+    // Sla direct op in de database
+    await updateProjectInDB();
+    showToast(`${newFile.name} aangemaakt`, 'success');
+};       
+        
+        
+        
+        
+        
+        
+        
+// --- GEWIJZIGDE FUNCTIE: setActiveFile ---
+const setActiveFile = (name) => {
+    if (!name) return;
+    // Als het bestand nog niet in de tabbladen staat, voeg het toe
+    if (!openTabs.value.includes(name)) {
+        openTabs.value.push(name);
+    }
+    activeFileName.value = name;
+};
         const activeFile = computed(() => files.value.find(f => f.name === activeFileName.value));
 
         watch(activeFile.value?.content, (newContent, oldContent) => {
@@ -481,18 +784,32 @@ const createBackup = async (isInitial = false) => {
             }
         };
 
-        const restoreVersion = async (backup) => {
-            if (!confirm(`Versie v${backup.version} herstellen?`)) return;
-            files.value = JSON.parse(JSON.stringify(backup.files));
-            currentVersion.value = backup.version;
-            if (editorInstance && activeFile.value) {
-                editorInstance.setValue(activeFile.value.content);
-            }
-            showToast(`Versie v${backup.version} hersteld`, 'success');
-            showHistoryModal.value = false;
-            await saveToCloud(true);
-            updatePreview();
-        };
+const restoreVersion = async (backup, projectId = null) => {
+    // Wissel van project indien nodig
+    if (projectId && projectId !== currentProjectId.value) {
+        await openProject(projectId);
+    }
+    
+    if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
+        // BELANGRIJK: Onthoud welk nummer we herstellen voor de saveNote straks
+        lastRestoredVersion.value = backup.version;
+        saveNote.value = `Herstart vanaf v${backup.version}`;
+
+        files.value = JSON.parse(JSON.stringify(backup.files));
+        currentVersion.value = backup.version;
+        
+        if (dirtyFiles.value) {
+            dirtyFiles.value.clear();
+        }
+        
+        setActiveFile('index.html');
+        updatePreview();
+        await updateProjectInDB();
+        
+        showToast(`Versie ${backup.version} hersteld. Note klaargezet.`, 'info');
+        expandedProjectId.value = null;
+    }
+};
 
         const deleteBackup = async (version) => {
             if (!confirm(`Backup v${version} verwijderen?`)) return;
@@ -582,6 +899,31 @@ const createBackup = async (isInitial = false) => {
             projectList,
             refreshProjectList,
             clientId,
+            openTabs,
+  			setActiveFile,
+    		closeTab,
+            expandedProjectId,
+   			toggleVersions,
+            dirtyFiles,
+    		getFileVersion,
+    		saveSingleFile,
+            activeFileHistoryTab,
+  			toggleFileHistory,
+		    restoreFileSubVersion,
+            deleteProjectBackup,
+            deleteFileHistoryItem,
+            saveNote,
+            lastRestoredVersion,
+            showNewFileModal,
+   			newFileName,
+    		createNewFile,
+            searchQuery,
+    		replaceQuery,
+    		searchMatches,
+    		undo,
+    		redo,
+    		findNext,
+    		replaceAll,
             apiUrl
         };
     }
