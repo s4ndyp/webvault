@@ -75,6 +75,9 @@ createApp({
         const searchQuery = ref('');
 		const replaceQuery = ref('');
 		const searchMatches = ref('');
+        const showPublishModal = ref(false);
+		const publishStatus = ref('Stopped'); // 'Stopped' of 'Running'
+		const selectedPublishVersion = ref(null);
 
         const toggleFileHistory = (tab) => {
     	activeFileHistoryTab.value = activeFileHistoryTab.value === tab ? null : tab;
@@ -720,7 +723,52 @@ const closeTab = (name) => {
 };       
         
         
-        
+   // Haal de status op bij het opstarten
+const checkServerStatus = async () => {
+    try {
+        const res = await fetch(`${API_URL}/api/server-status`);
+        const data = await res.json();
+        publishStatus.value = data.status;
+    } catch (e) {
+        console.error("Server offline");
+    }
+};
+
+const publishProject = async (project, backup) => {
+    isLoading.value = true;
+    try {
+        const response = await fetch(`${API_URL}/api/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                projectId: project._id,
+                version: backup.version,
+                files: backup.files // De bestanden uit de gekozen versie
+            })
+        });
+        const result = await response.json();
+        if (result.success) {
+            publishStatus.value = 'Running';
+            showPublishModal.value = false;
+            showToast(result.message, 'success');
+        }
+    } catch (e) {
+        showToast("Publicatie mislukt", "error");
+    } finally {
+        isLoading.value = false;
+    }
+};
+
+const stopServer = async () => {
+    if (!confirm("Weet je zeker dat je de live website wilt offline halen?")) return;
+    try {
+        await fetch(`${API_URL}/api/stop-server`, { method: 'POST' });
+        publishStatus.value = 'Stopped';
+        showToast("Server gestopt");
+    } catch (e) {
+        showToast("Kon server niet stoppen", "error");
+    }
+};     
         
         
         
@@ -924,6 +972,10 @@ const restoreVersion = async (backup, projectId = null) => {
     		redo,
     		findNext,
     		replaceAll,
+            showPublishModal,
+			publishStatus,
+			publishProject,
+			stopServer,
             apiUrl
         };
     }
