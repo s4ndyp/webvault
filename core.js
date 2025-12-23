@@ -6,6 +6,7 @@
 const API_URL = 'http://10.10.2.20:5000';  // Backend API URL
 const CLIENT_ID = 'sandman';                 // Unieke gebruiker ID
 const APP_NAME = 'sitebuilder';              // App naam voor collectie-prefix
+const PUBLISH_API = window.location.origin;
 
 // ============================================
 // OFFLINE MANAGER INITIALISATIE
@@ -737,26 +738,24 @@ const closeTab = (name) => {
         
 const checkServerStatus = async () => {
     try {
-        // We gebruiken de proxy of het directe IP
-        const res = await fetch(`${API_URL}/api/server-status`);
+        // Gebruik PUBLISH_API (poort 80 van de nieuwe server, die proxied naar 5000)
+        const res = await fetch(`${PUBLISH_API}/api/server-status`);
         const data = await res.json();
-        publishStatus.value = data.status; // Dit zet hem op 'Running' of 'Stopped'
+        publishStatus.value = data.status;
     } catch (e) {
-        console.error("Kon server status niet ophalen");
         publishStatus.value = 'Stopped';
     }
 };
-
 const publishProject = async (project, backup) => {
     isLoading.value = true;
     try {
-        const response = await fetch(`${API_URL}/api/publish`, {
+        const response = await fetch(`${PUBLISH_API}/api/publish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 projectId: project._id,
                 version: backup.version,
-                files: backup.files // De bestanden uit de gekozen versie
+                files: backup.files 
             })
         });
         const result = await response.json();
@@ -766,7 +765,7 @@ const publishProject = async (project, backup) => {
             showToast(result.message, 'success');
         }
     } catch (e) {
-        showToast("Publicatie mislukt", "error");
+        showToast("Publicatie mislukt via " + PUBLISH_API, "error");
     } finally {
         isLoading.value = false;
     }
