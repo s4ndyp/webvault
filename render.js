@@ -1,13 +1,5 @@
-// Render logica placeholder
-// In deze app wordt de render logica voornamelijk afgehandeld door Vue in core.js
-// en de preview/zip functionaliteit.
-// Dit bestand is aanwezig om de gevraagde structuur te behouden.
+// render.js - Render helper functions
+// Dit bestand is optioneel en wordt geladen in de preview iframe
 
-console.log('Render module geladen');
-
-const formatDate = (date) => {
-    return new Intl.DateTimeFormat('nl-NL', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit'
-    }).format(date);
-};
+// Voorbeeld: Hier kun je globale functies definiëren die in de preview beschikbaar zijn
+console.log('[Render] Render helpers geladen');
