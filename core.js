@@ -26,14 +26,20 @@ async function initManager() {
         });
         
         // Auto-refresh elke 60 seconden (actieve sync)
-        setInterval(async () => {
-            if (navigator.onLine && manager) {
-                await manager.refreshCache('projects');
-            }
-        }, 60000);
+// --- PAS DE setInterval AAN IN initManager ---
+setInterval(async () => {
+    // Voeg een extra check toe: alleen refreshen als we niet net handmatig gestopt zijn
+    // en als de pagina nog steeds zichtbaar is (bespaart ook resources)
+    if (navigator.onLine && manager && publishStatus.value !== 'Stopping...') {
+        console.log('[Manager] Automatische cache refresh...');
+        await manager.refreshCache('projects');
+        
+        // Roep alleen de status check aan als de server NIET handmatig gestopt is
+        if (publishStatus.value !== 'Stopped') {
+            await checkServerStatus();
+        }
     }
-    return manager;
-}
+}, 60000); // 60 seconden
 
 // ============================================
 // VUE APP
@@ -918,18 +924,33 @@ const publishProject = async (project, backup) => {
 };
 
 const stopServer = async () => {
-    if (!confirm("Weer terug naar live-preview mode?")) return;
     try {
-        await fetch(`${API_URL}/api/stop-server`, { method: 'POST' });
-        publishStatus.value = 'Stopped';
+        // Direct visueel op 'Stopping' zetten
+        publishStatus.value = 'Stopping...';
         
-        // Terug naar de normale preview mode
-        updatePreview(); 
-        showToast("Live site offline, terug naar editor-preview");
-    } catch (e) {
-        showToast("Fout bij stoppen", "error");
+        const response = await fetch(`${API_URL}/stop-server`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+            // FORCEER de status op Stopped
+            publishStatus.value = 'Stopped';
+            showToast('Server succesvol gestopt', 'info');
+            
+            // Optioneel: Update de lokale manager cache direct zodat de interval 
+            // niet een oude status ophaalt
+            if (manager) {
+                await manager.updateCache('serverStatus', { status: 'Stopped' });
+            }
+        }
+    } catch (err) {
+        console.error('Fout bij stoppen server:', err);
+        showToast('Kon server niet stoppen', 'error');
+        // Bij fout halen we de echte status weer op
+        checkServerStatus(); 
     }
-};   
+};
         
         
         
