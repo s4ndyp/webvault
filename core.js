@@ -197,24 +197,14 @@ createApp({
             }
         });
 
-const updatePreview = () => {
+ const updatePreview = () => {
     if (!files.value || files.value.length === 0) return;
 
-    // 1. Zoek de container waar de iframe in zit
-    const container = document.querySelector('.flex-1.flex.flex-col.bg-slate-900.relative');
-    if (!container) return;
+    // 1. Pak de iframe via de juiste weg
+    const iframe = document.querySelector('iframe');
+    if (!iframe) return;
 
-    // 2. Verwijder de oude iframe volledig
-    const oldIframe = container.querySelector('iframe');
-    if (oldIframe) oldIframe.remove();
-
-    // 3. Maak een gloednieuwe iframe aan
-    const newIframe = document.createElement('iframe');
-    newIframe.className = "w-full h-full border-none bg-slate-900";
-    newIframe.sandbox = "allow-scripts allow-modals allow-same-origin allow-forms";
-    container.appendChild(newIframe);
-
-    // 4. Verzamel de content (je bestaande logica)
+    // 2. Haal de content op (jouw vertrouwde logica)
     const getFileContent = (name) => {
         const f = files.value.find(file => file.name === name);
         return f ? f.content : '';
@@ -223,19 +213,27 @@ const updatePreview = () => {
     const html = getFileContent('index.html');
     const css = getFileContent('styles.css');
     const tailwindConfig = getFileContent('tailwind.js');
-    
-    // Verzamel extra CSS en JS...
-    const extraCss = files.value.filter(f => f.name.endsWith('.css') && f.name !== 'styles.css').map(f => `<style>${f.content}</style>`).join('\n');
-    const extraJs = files.value.filter(f => f.name.endsWith('.js') && f.name !== 'tailwind.js' && f.name !== 'core.js').map(f => `<script>${f.content.replace(/<\/script>/g, '<\\/script>')}<\/script>`).join('\n');
 
-    // 5. Bouw de HTML
+    const extraCss = files.value
+        .filter(f => f.name.endsWith('.css') && f.name !== 'styles.css')
+        .map(f => `<style>${f.content}</style>`)
+        .join('\n');
+
+    const extraJs = files.value
+        .filter(f => f.name.endsWith('.js') && f.name !== 'tailwind.js')
+        .map(f => `<script>${f.content.replace(/<\/script>/g, '<\\/script>')}<\/script>`)
+        .join('\n');
+
     const completeHtml = `<!DOCTYPE html>
-<html>
+<html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <script src="https://cdn.tailwindcss.com"><\/script>
-    <script>${tailwindConfig}<\/script>
-    <style>body { background-color: white; color: black; } ${css}</style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>${tailwindConfig.replace(/<\/script>/g, '<\\/script>')}<\/script>
+    <style>
+        body { background-color: white; color: black; margin: 0; padding: 0; } 
+        ${css}
+    </style>
     ${extraCss}
 </head>
 <body>
@@ -244,11 +242,9 @@ const updatePreview = () => {
 </body>
 </html>`;
 
-    // 6. Injecteer de code in de verse iframe
-    const doc = newIframe.contentDocument || newIframe.contentWindow.document;
-    doc.open();
-    doc.write(completeHtml);
-    doc.close();
+    // 3. DE FIX: We gebruiken de 'srcdoc' methode via JavaScript 
+    // Dit is stabieler dan document.write bij snelle wijzigingen
+    iframe.srcdoc = completeHtml;
 };
         const setViewMode = (mode) => {
             viewMode.value = mode;
