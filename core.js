@@ -79,6 +79,7 @@ createApp({
         const showPublishModal = ref(false);
 		const publishStatus = ref('Stopped'); // 'Stopped' of 'Running'
 		const selectedPublishVersion = ref(null);
+        const isRefreshing = ref(false);
 
         const toggleFileHistory = (tab) => {
     	activeFileHistoryTab.value = activeFileHistoryTab.value === tab ? null : tab;
@@ -470,41 +471,81 @@ watch(searchQuery, (newQuery) => {
     }
 }; 
         
-        
+   const forcePreviewRefresh = () => {
+    isRefreshing.value = true;
+    
+    // 1. Forceer de update van de preview
+    updatePreview();
+    
+    // 2. Als de editor er is, ververs deze ook even (tegen visuele glitches)
+    if (editorInstance) {
+        editorInstance.refresh();
+    }
+
+    // Laat het icoontje heel even draaien voor de beleving
+    setTimeout(() => {
+        isRefreshing.value = false;
+        showToast('Preview ververst', 'info');
+    }, 500);
+};     
         // --- UPLOAD LOGICA ---
         const triggerUpload = () => fileInput.value.click();
 
-        const handleFileUpload = async (event) => {
-            const fileList = Array.from(event.target.files);
-            if (!fileList.length) return;
+const handleFileUpload = async (event) => {
+    const fileList = Array.from(event.target.files);
+    if (!fileList.length) return;
 
-            let uploadedCount = 0;
-            for (const file of fileList) {
-                const text = await file.text();
-                const existingFile = files.value.find(f => f.name === file.name);
-                if (existingFile) {
-                    existingFile.content = text;
-                    existingFile.lastModified = Date.now();
-                } else {
-                    files.value.push({
-                        name: file.name,
-                        content: text,
-                        lastModified: Date.now()
-                    });
-                }
-                uploadedCount++;
-            }
+    let updatedCount = 0;
+    
+    for (const file of fileList) {
+        const text = await file.text();
+        const existingFile = files.value.find(f => f.name === file.name);
 
-            if (uploadedCount > 0) {
-                showToast(`${uploadedCount} bestanden geupload`);
-                if (editorInstance && activeFile.value) {
-                    editorInstance.setValue(activeFile.value.content);
-                }
-                updatePreview();
-                event.target.value = '';
-                await createBackup(false);
-            }
-        };
+        if (existingFile) {
+            // 1. Sla de huidige staat op in de geschiedenis voordat we overschrijven
+            if (!existingFile.fileHistory) existingFile.fileHistory = [];
+            existingFile.fileHistory.unshift({
+                subVersion: existingFile.subVersion || 0,
+                content: existingFile.content,
+                note: `Overschreven door upload`,
+                timestamp: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
+            });
+
+            // 2. Update de content en verhoog sub-versie
+            existingFile.content = text;
+            existingFile.savedContent = text; // Direct als 'schoon' markeren
+            existingFile.subVersion = (existingFile.subVersion || 0) + 1;
+            existingFile.lastModified = Date.now();
+            
+            // Verwijder uit dirty files mocht hij daar in staan
+            dirtyFiles.value.delete(file.name);
+        } else {
+            // Nieuw bestand toevoegen
+            files.value.push({
+                name: file.name,
+                content: text,
+                savedContent: text,
+                subVersion: 0,
+                fileHistory: [],
+                lastModified: Date.now()
+            });
+        }
+        updatedCount++;
+
+        // Als dit het actieve bestand is, update de editor
+        if (activeFileName.value === file.name && editorInstance) {
+            editorInstance.setValue(text);
+            editorInstance.clearHistory();
+        }
+    }
+
+    if (updatedCount > 0) {
+        updatePreview();
+        await updateProjectInDB(); // Sla direct op in de cloud/database
+        showToast(`${updatedCount} bestanden verwerkt`, 'success');
+        event.target.value = ''; // Reset de input
+    }
+};
 
         // --- PROJECT API's (OFFLINEMANAGER) ---
         const refreshProjectList = async () => {
@@ -1033,6 +1074,8 @@ const restoreVersion = async (backup, projectId = null) => {
 			publishProject,
 			stopServer,
             downloadSingleFileZip,
+            isRefreshing,
+            forcePreviewRefresh,
             apiUrl
         };
     }
