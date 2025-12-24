@@ -35,5 +35,7 @@ RUN echo "#!/bin/sh" > /start.sh && \
 
 # Open de poorten: 80 (Builder), 8080 (Live Site), 5000 (API)
 EXPOSE 80 8080 5000
+# Voeg dit toe onderaan je Dockerfile, net voor de CMD ["/start.sh"]
+RUN chown -R nginx:nginx /var/www/published && chmod -R 755 /var/www/published
 
 CMD ["/start.sh"]
