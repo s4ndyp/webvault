@@ -41,7 +41,7 @@ setInterval(async () => {
     }
 }, 60000); // 60 seconden
 }
-}	
+}
 // ============================================
 // VUE APP
 // ============================================
@@ -87,6 +87,8 @@ createApp({
 		const publishStatus = ref('Stopped'); // 'Stopped' of 'Running'
 		const selectedPublishVersion = ref(null);
         const isRefreshing = ref(false);
+        const totalMatches = ref(0);
+		const currentMatchIndex = ref(0);
 
         const toggleFileHistory = (tab) => {
     	activeFileHistoryTab.value = activeFileHistoryTab.value === tab ? null : tab;
@@ -378,26 +380,53 @@ const restoreFileSubVersion = (fileName, historyItem) => {
         const redo = () => { if (editorInstance) editorInstance.redo(); };
 
         // --- ZOEK & VERVANG ---
-        const findNext = () => {
-            if (!editorInstance || !searchQuery.value) return;
-            // CodeMirror search addon moet geladen zijn voor getSearchCursor
-            if (editorInstance.getSearchCursor) {
-                const cursor = editorInstance.getSearchCursor(searchQuery.value);
-                if (cursor.findNext()) {
-                    editorInstance.setSelection(cursor.from(), cursor.to());
-                    editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 20);
-                }
-            } else {
-                // Fallback als addon niet geladen is
-                const content = editorInstance.getValue();
-                const index = content.indexOf(searchQuery.value);
-                if (index !== -1) {
-                    const pos = editorInstance.posFromIndex(index);
-                    const endPos = editorInstance.posFromIndex(index + searchQuery.value.length);
-                    editorInstance.setSelection(pos, endPos);
-                }
-            }
-        };
+const findNext = () => {
+    if (!editorInstance || !searchQuery.value) return;
+    const cursor = editorInstance.getSearchCursor(searchQuery.value);
+    
+    // Als we al een selectie hebben, start na de huidige selectie
+    const startFrom = editorInstance.getCursor("to");
+    
+    if (!cursor.findNext(startFrom)) {
+        // Indien we aan het einde zijn, begin weer bovenaan (wrap around)
+        cursor.findNext();
+    }
+    
+    if (cursor.from()) {
+        editorInstance.setSelection(cursor.from(), cursor.to());
+        editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
+        updateMatchCounters();
+    }
+};
+
+const findPrev = () => {
+    if (!editorInstance || !searchQuery.value) return;
+    const cursor = editorInstance.getSearchCursor(searchQuery.value);
+    const startFrom = editorInstance.getCursor("from");
+    
+    if (!cursor.findPrevious(startFrom)) {
+        // Indien we bovenaan zijn, ga naar de laatste onderaan
+        while(cursor.findNext());
+    }
+    
+    if (cursor.from()) {
+        editorInstance.setSelection(cursor.from(), cursor.to());
+        editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
+        updateMatchCounters();
+    }
+};
+
+const updateMatchCounters = () => {
+    const content = editorInstance.getValue().toLowerCase();
+    const query = searchQuery.value.toLowerCase();
+    const matches = content.split(query).length - 1;
+    totalMatches.value = matches;
+
+    // Bepaal welk resultaat we nu hebben door de index van de cursor te vergelijken
+    const cursorIndex = editorInstance.indexFromPos(editorInstance.getCursor("from"));
+    const textBeforeCursor = content.substring(0, cursorIndex + query.length);
+    currentMatchIndex.value = textBeforeCursor.split(query).length - 1;
+};
 
         const replaceAll = () => {
             if (!editorInstance || !searchQuery.value) return;
@@ -418,41 +447,41 @@ const setActiveFileWithCleanCheck = (name) => {
         
         
         
-watch(searchQuery, (newQuery) => {
+wwatch(searchQuery, (newQuery) => {
     if (!editorInstance) return;
 
+    // 1. Verwijder de oude markeringen (highlights)
     if (editorInstance.state.searchOverlay) {
         editorInstance.removeOverlay(editorInstance.state.searchOverlay);
     }
 
+    // 2. Als het veld leeg is of te kort: reset alles en stop
     if (!newQuery || newQuery.length < 2) {
         searchMatches.value = "";
+        totalMatches.value = 0;
+        currentMatchIndex.value = 0;
         return;
     }
 
+    // 3. Teken de nieuwe markeringen in de editor
     editorInstance.state.searchOverlay = {
         token: function(stream) {
-            // Maak een regex die hoofdlettergevoeligheid negeert
             const query = newQuery.toLowerCase();
-            
-            // Kijk of de huidige tekst in de stream begint met onze zoekterm
             if (stream.string.toLowerCase().slice(stream.pos).indexOf(query) == 0) {
-                // We hebben een match! Markeer het aantal karakters van de zoekterm
                 for (var i = 0; i < query.length; i++) stream.next();
-                return "searching"; // Geef de class terug
+                return "searching"; 
             }
-
-            // Geen match? Ga naar het volgende karakter
             stream.next();
         }
     };
-
     editorInstance.addOverlay(editorInstance.state.searchOverlay);
 
-    // Matches tellen (blijft hetzelfde)
-    const content = editorInstance.getValue();
-    const count = (content.toLowerCase().split(newQuery.toLowerCase()).length - 1);
-    searchMatches.value = count > 0 ? `${count} gevonden` : "0 gevonden";
+    // 4. Update de tellers en spring direct naar het eerste resultaat
+    // We gebruiken een kleine timeout zodat CodeMirror de tijd heeft om de overlay te verwerken
+    setTimeout(() => {
+        updateMatchCounters();
+        findNext(); 
+    }, 10);
 });
         
         
@@ -496,6 +525,60 @@ watch(searchQuery, (newQuery) => {
         showToast("Download mislukt", "error");
     }
 }; 
+
+        
+const resetProjectHistory = async (proj) => {
+    const msg = `Weet je zeker dat je alle historie van '${proj.name}' wilt wissen?\n\nJe krijgt eerst een volledige ZIP van alle versies, daarna wordt het project gereset naar v1.`;
+    if (!confirm(msg)) return;
+
+    isLoading.value = true;
+    try {
+        // 1. MAAK DE ARCHIEF-ZIP
+        const zip = new JSZip();
+        const mainFolder = zip.folder(`archive_${proj.name}_v${proj.currentVersion}`);
+        
+        // Loop door de historie en voeg elke versie toe als mapje
+        proj.history.forEach(backup => {
+            const versionFolder = mainFolder.folder(`v${backup.version}_${backup.timestamp.replace(/:/g, '-')}`);
+            backup.files.forEach(file => {
+                versionFolder.file(file.name, file.content);
+            });
+        });
+
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, `FULL_ARCHIVE_${proj.name}.zip`);
+        showToast("Archief gedownload, nu opschonen...", "info");
+
+        // 2. PROJECT RESETTEN NAAR v1
+        const resetProject = {
+            ...proj,
+            currentVersion: 1,
+            highestVersion: 1,
+            history: [], // Wis alle historie
+            lastRestoredVersion: null
+        };
+
+        await manager.saveSmartDocument('projects', resetProject);
+        
+        // Als we dit project open hadden, direct updaten
+        if (currentProjectId.value === proj._id) {
+            currentVersion.value = 1;
+            highestVersion.value = 1;
+            history.value = [];
+        }
+
+        await refreshProjectList();
+        showToast("Project gereset naar v1", "success");
+    } catch (e) {
+        console.error(e);
+        showToast("Reset mislukt", "error");
+    } finally {
+        isLoading.value = false;
+    }
+};        
+        
+        
+        
         
 const forcePreviewRefresh = () => {
     isRefreshing.value = true;
@@ -929,9 +1012,7 @@ const stopServer = async () => {
         // Direct visueel op 'Stopping' zetten
         publishStatus.value = 'Stopping...';
         
-        // FIX 1: Gebruik PUBLISH_API en het juiste pad /api/stop-server
-        // FIX 2: Puntkomma toegevoegd na de fetch call
-        const response = await fetch(`${PUBLISH_API}/api/stop-server`, {
+       const response = await fetch(`${PUBLISH_API}/api/stop-server`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -941,20 +1022,17 @@ const stopServer = async () => {
             publishStatus.value = 'Stopped';
             showToast('Server succesvol gestopt', 'info');
             
-            // Optioneel: Update de lokale manager cache direct
+            // Optioneel: Update de lokale manager cache direct zodat de interval 
+            // niet een oude status ophaalt
             if (manager) {
-                // Let op: updateCache is vaak een async functie
                 await manager.updateCache('serverStatus', { status: 'Stopped' });
             }
-        } else {
-            // Als de response niet OK is (bijv. 404 of 500)
-            throw new Error(`Server reageerde met status: ${response.status}`);
         }
     } catch (err) {
         console.error('Fout bij stoppen server:', err);
         showToast('Kon server niet stoppen', 'error');
-        // Bij fout halen we de echte status weer op om de UI te resetten
-        await checkServerStatus(); 
+        // Bij fout halen we de echte status weer op
+        checkServerStatus(); 
     }
 };
         
@@ -1020,7 +1098,41 @@ const setActiveFile = (name) => {
             }
         };
 
-  
+  const publishCurrentState = async () => {
+    isLoading.value = true;
+    try {
+        // We pakken de huidige files direct uit de editor (met de laatste wijzigingen)
+        const currentFiles = JSON.parse(JSON.stringify(files.value));
+        
+        const response = await fetch(`${PUBLISH_API}/api/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                projectId: currentProjectId.value,
+                version: "Experiment", // Speciale marker voor de server
+                note: "Niet-opgeslagen wijzigingen (Live Experiment)",
+                files: currentFiles 
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            publishStatus.value = 'Running';
+            showPublishModal.value = false;
+            
+            const iframe = document.querySelector('iframe');
+            if (iframe) {
+                iframe.removeAttribute('srcdoc');
+                iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
+            }
+            showToast("Experiment gestart op poort 8080", "success");
+        }
+    } catch (e) {
+        showToast("Experiment mislukt", "error");
+    } finally {
+        isLoading.value = false;
+    }
+};
 // --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
 const restoreVersion = async (backup) => {
     if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
@@ -1177,6 +1289,11 @@ const restoreVersion = async (backup) => {
             downloadSingleFileZip,
             isRefreshing,
             forcePreviewRefresh,
+            publishCurrentState,
+            resetProjectHistory,
+            findPrev, 
+            totalMatches,
+            currentMatchIndex,
             apiUrl
         };
     }
