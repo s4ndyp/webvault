@@ -42,16 +42,31 @@ for (const file of files) {
     }
 });
 
-// API: Stop de server (maak de map leeg)
+// API: Stop de server
 app.post('/api/stop-server', async (req, res) => {
-    await fs.emptyDir(PUBLISH_DIR);
-    serverStatus = "Stopped";
-    res.json({ success: true, message: "Server gestopt" });
+    try {
+        await fs.emptyDir(PUBLISH_DIR);
+        serverStatus = "Stopped";
+        console.log("[Server] Status handmatig op Stopped gezet.");
+        res.json({ success: true, message: "Server gestopt" });
+    } catch (err) {
+        console.error("[Server] Fout bij stoppen:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
-// API: Status opvragen
+// API: Status opvragen (Robuuste versie)
 app.get('/api/server-status', (req, res) => {
-    res.json({ status: serverStatus });
+    // We sturen ook een timestamp mee om browser-caching van dit API verzoek te voorkomen
+    res.set('Cache-Control', 'no-store');
+    res.json({ 
+        status: serverStatus,
+        timestamp: new Date().getTime() 
+    });
 });
 
-app.listen(5000, () => console.log('Publish API draait op poort 5000'));
+// Luister op 0.0.0.0 zodat hij ook via het lokale IP van de container/VPS bereikbaar is
+const PORT = 5000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Publish API draait op http://0.0.0.0:${PORT}`);
+});
