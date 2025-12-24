@@ -5,9 +5,10 @@ FROM nginx:alpine
 RUN apk add --no-cache nodejs npm
 
 # Maak de mappen aan
-RUN mkdir -p /var/www/published
+# RUN mkdir -p /var/www/published
 RUN mkdir -p /usr/src/app
-
+# ... na het aanmaken van de mappen ...
+RUN mkdir -p /var/www/published && chown -R nginx:nginx /var/www/published
 # Kopieer de Editor bestanden (HTML, JS, CSS) naar de NGINX map
 COPY ./index.html /usr/share/nginx/html/
 COPY ./core.js /usr/share/nginx/html/
@@ -27,8 +28,9 @@ RUN npm install
 # Kopieer de NGINX configuratie
 COPY ./nginx.conf /etc/nginx/nginx.conf
 
-# Start script maken om zowel NGINX als Node te starten
+# Zorg dat het start-script ook rechten herstelt bij elke boot
 RUN echo "#!/bin/sh" > /start.sh && \
+    echo "chown -R nginx:nginx /var/www/published" >> /start.sh && \
     echo "node /usr/src/app/server.js &" >> /start.sh && \
     echo "nginx -g 'daemon off;'" >> /start.sh && \
     chmod +x /start.sh
