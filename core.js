@@ -200,19 +200,21 @@ createApp({
  const updatePreview = () => {
     if (!files.value || files.value.length === 0) return;
 
-    // 1. Functie om specifieke bestanden op te halen (zoals je al had)
+    // 1. Pak de iframe referentie (zorg dat je iframe een ref heeft of gebruik selector)
+    const iframe = document.querySelector('iframe');
+    if (!iframe) return;
+
+    // 2. Functie om specifieke bestanden op te halen
     const getFileContent = (name) => {
         const f = files.value.find(file => file.name === name);
         return f ? f.content : '';
     };
 
-    // 2. Haal de basisbestanden op
+    // 3. Verzamel alle content (Jouw originele logica)
     const html = getFileContent('index.html');
     const css = getFileContent('styles.css');
     const tailwindConfig = getFileContent('tailwind.js');
 
-    // 3. Verzamel automatisch ALLE ANDERE bestanden die niet index, styles of tailwind zijn
-    // We splitsen ze in CSS en JS
     const extraCss = files.value
         .filter(f => f.name.endsWith('.css') && f.name !== 'styles.css')
         .map(f => `<style>${f.content}</style>`)
@@ -223,7 +225,7 @@ createApp({
         .map(f => `<script>${f.content.replace(/<\/script>/g, '<\\/script>')}<\/script>`)
         .join('\n');
 
-    // 4. Bouw de HTML op (jouw werkende structuur)
+    // 4. Bouw de volledige HTML
     const completeHtml = `<!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -242,9 +244,18 @@ createApp({
 </body>
 </html>`;
 
-    previewContent.value = completeHtml;
+    // 5. DE FIX: Forceer een "Hard Reset" van het iframe geheugen
+    // We gebruiken niet langer previewContent.value = ...
+    try {
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        doc.open();
+        doc.write(completeHtml);
+        doc.close();
+    } catch (err) {
+        // Fallback voor als de iframe nog niet geladen is
+        previewContent.value = completeHtml; 
+    }
 };
-
         const setViewMode = (mode) => {
             viewMode.value = mode;
             if (mode !== 'preview') {
@@ -471,23 +482,19 @@ watch(searchQuery, (newQuery) => {
     }
 }; 
         
-   const forcePreviewRefresh = () => {
+const forcePreviewRefresh = () => {
     isRefreshing.value = true;
     
-    // 1. Forceer de update van de preview
-    updatePreview();
-    
-    // 2. Als de editor er is, ververs deze ook even (tegen visuele glitches)
-    if (editorInstance) {
-        editorInstance.refresh();
-    }
+    // Wis tijdelijke preview data in de Vue state
+    previewContent.value = ''; 
 
-    // Laat het icoontje heel even draaien voor de beleving
+    // Geef de browser 50ms de tijd om het geheugen vrij te geven
     setTimeout(() => {
+        updatePreview();
         isRefreshing.value = false;
-        showToast('Preview ververst', 'info');
-    }, 500);
-};     
+        showToast('Geheugen gewist & Preview herstart', 'info');
+    }, 50);
+};
         // --- UPLOAD LOGICA ---
         const triggerUpload = () => fileInput.value.click();
 
