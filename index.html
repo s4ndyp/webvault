@@ -209,27 +209,44 @@
                     </div>
                 </div>
 
-<div class="flex bg-darkpaper border-b border-gray-700 overflow-x-auto no-scrollbar shrink-0 h-12">
+<div class="flex bg-darkpaper border-b border-gray-800 overflow-x-auto no-scrollbar shrink-0 h-12">
     
     <div v-for="tab in openTabs" :key="tab"
         @click="setActiveFile(tab)"
         :class="activeFileName === tab ? 'bg-dark border-t-2 border-primary text-white shadow-[0_-4px_10px_rgba(99,102,241,0.1)]' : 'text-gray-400 hover:bg-gray-800 border-t-2 border-transparent'"
         class="flex items-center gap-2 px-4 py-2 cursor-pointer transition-all text-sm font-medium whitespace-nowrap group min-w-[170px] justify-between relative border-r border-gray-700">
         
-<div class="flex items-center gap-2">
-    <i :class="getFileIcon(tab)" class="text-xs"></i>
-    <div class="flex flex-col leading-none">
         <div class="flex items-center gap-2">
-            <span class="text-sm font-semibold">{{ tab }}</span>
-            <button v-if="files.find(f => f.name === tab)?.fileHistory?.length > 0"
-                    @click.stop="toggleFileHistory(tab)"
-                    class="text-xs text-gray-500 hover:text-primary transition p-0.5">
-                <i class="fas fa-history"></i>
-            </button>
+            <i :class="getFileIcon(tab)" class="text-xs"></i>
+            <div class="flex flex-col leading-none">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold">{{ tab }}</span>
+                    
+                    <div class="flex items-center gap-1 opacity-100 group-hover:opacity-100 transition-opacity">
+                        <button v-if="files.find(f => f.name === tab)?.fileHistory?.length > 0"
+                                @click.stop="toggleFileHistory(tab)"
+                                class="text-[12px] text-gray-500 hover:text-blue-500 transition p-0.5"
+                                title="Versies bekijken">
+                            <i class="fas fa-history"></i>
+                        </button>
+
+                        <button @click.stop="downloadSingleFileZip(files.find(f => f.name === tab))"
+                                class="text-[12px] text-gray-500 hover:text-green-500 transition p-0.5"
+                                title="Download dit bestand als ZIP">
+                            <i class="fas fa-download"></i>
+                        </button>
+                    </div>
+                </div>
+                <span class="text-[14px] text-green-500 font-bold">v{{ getFileVersion(tab) }}</span>
+            </div>
         </div>
-        <span class="text-[9px] text-gray-500 font-bold">v{{ getFileVersion(tab) }}</span>
+
+        <button @click.stop="closeTab(tab)" 
+                class="ml-2 text-gray-600 hover:text-red-500 opacity-100 group-hover:opacity-100 transition-all">
+            <i class="fas fa-times text-xs"></i>
+        </button>
     </div>
-</div>
+
 
 <div class="flex items-center gap-2">
     <input v-if="dirtyFiles.has(tab)" 

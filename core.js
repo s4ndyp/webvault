@@ -196,31 +196,53 @@ createApp({
             }
         });
 
-        // --- PREVIEW LOGICA ---
-        const updatePreview = () => {
-            if (!files.value || files.value.length === 0) return;
-            const getFileContent = (name) => {
-                const f = files.value.find(file => file.name === name);
-                return f ? f.content : '';
-            };
+ const updatePreview = () => {
+    if (!files.value || files.value.length === 0) return;
 
-            const completeHtml = `<!DOCTYPE html>
-<html>
+    // 1. Functie om specifieke bestanden op te halen (zoals je al had)
+    const getFileContent = (name) => {
+        const f = files.value.find(file => file.name === name);
+        return f ? f.content : '';
+    };
+
+    // 2. Haal de basisbestanden op
+    const html = getFileContent('index.html');
+    const css = getFileContent('styles.css');
+    const tailwindConfig = getFileContent('tailwind.js');
+
+    // 3. Verzamel automatisch ALLE ANDERE bestanden die niet index, styles of tailwind zijn
+    // We splitsen ze in CSS en JS
+    const extraCss = files.value
+        .filter(f => f.name.endsWith('.css') && f.name !== 'styles.css')
+        .map(f => `<style>${f.content}</style>`)
+        .join('\n');
+
+    const extraJs = files.value
+        .filter(f => f.name.endsWith('.js') && f.name !== 'tailwind.js')
+        .map(f => `<script>${f.content.replace(/<\/script>/g, '<\\/script>')}<\/script>`)
+        .join('\n');
+
+    // 4. Bouw de HTML op (jouw werkende structuur)
+    const completeHtml = `<!DOCTYPE html>
+<html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>${getFileContent('tailwind.js')}</script>
-    <style>${getFileContent('styles.css')}</style>
+    <script>${tailwindConfig.replace(/<\/script>/g, '<\\/script>')}<\/script>
+    <style>
+        body { background-color: white; color: black; margin: 0; padding: 0; } 
+        ${css}
+    </style>
+    ${extraCss}
 </head>
 <body>
-    ${getFileContent('index.html')}
-    <script>${getFileContent('core.js')}</script>
-    <script>${getFileContent('render.js')}</script>
+    ${html}
+    ${extraJs}
 </body>
 </html>`;
-            previewContent.value = completeHtml;
-        };
+
+    previewContent.value = completeHtml;
+};
 
         const setViewMode = (mode) => {
             viewMode.value = mode;
@@ -427,6 +449,28 @@ watch(searchQuery, (newQuery) => {
             showToast(`Versie v${currentVersion.value} ingevoegd!`);
         };
 
+        
+       const downloadSingleFileZip = async (file) => {
+    if (!file) return;
+
+    const zip = new JSZip();
+    // We stoppen het bestand erin met zijn originele naam
+    zip.file(file.name, file.content);
+
+    // We maken een duidelijke naam voor de ZIP zelf
+    const zipName = `${currentProjectName.value.replace(/\s+/g, '_')}_v${getFileVersion(file.name)}_${file.name}.zip`;
+
+    try {
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, zipName);
+        showToast(`${file.name} als ZIP gedownload`, 'success');
+    } catch (err) {
+        console.error("Download fout:", err);
+        showToast("Download mislukt", "error");
+    }
+}; 
+        
+        
         // --- UPLOAD LOGICA ---
         const triggerUpload = () => fileInput.value.click();
 
@@ -988,6 +1032,7 @@ const restoreVersion = async (backup, projectId = null) => {
 			publishStatus,
 			publishProject,
 			stopServer,
+            downloadSingleFileZip,
             apiUrl
         };
     }
