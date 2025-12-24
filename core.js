@@ -308,23 +308,36 @@ createApp({
                 }
                 
                 updatePreview();
-                showToast(`${fileName} hersteld`, 'info');
+                showToast(`${fileName} hersteld`, 'info'); 
                 activeFileHistoryTab.value = null; 
             }
         };
 
-        const updateProjectInDB = async () => {
-            if (!currentProjectId.value) return;
-            const project = {
-                _id: currentProjectId.value,
-                name: currentProjectName.value,
-                files: JSON.parse(JSON.stringify(files.value)),
-                history: history.value,
-                currentVersion: currentVersion.value
-            };
-            await manager.saveSmartDocument('projects', project);
-            await refreshProjectList();
-        };      
+const updateProjectInDB = async () => {
+    if (!currentProjectId.value || !manager) return;
+
+    // We berekenen de hoogste versie nu even snel hier, 
+    // maar we laten de manager het zware werk doen voor de opslag.
+
+
+    const projectData = {
+        _id: currentProjectId.value, // Let op de underscore voor de manager/backend!
+        name: currentProjectName.value,
+        files: JSON.parse(JSON.stringify(files.value)),
+        history: JSON.parse(JSON.stringify(history.value)),
+        currentVersion: currentVersion.value,
+ //       highestVersion: highestInHistory.value,),
+        highestVersion: 4),
+        lastUpdated: Date.now()
+    };
+
+    // GEBRUIK DE MANAGER (voor cloud-sync en lokale opslag)
+    try {
+        await manager.saveSmartDocument('projects', projectData);
+    } catch (err) {
+        console.error("Fout bij opslaan via manager:", err);
+    }
+};  
 
         const deleteProjectBackup = async (projectId, version) => {
             if (!confirm(`Verwijder versie ${version}?`)) return;
@@ -471,23 +484,20 @@ watch(searchQuery, (newQuery) => {
     }
 }; 
         
-   const forcePreviewRefresh = () => {
+const forcePreviewRefresh = () => {
     isRefreshing.value = true;
     
-    // 1. Forceer de update van de preview
-    updatePreview();
+    // 1. Maak de preview even helemaal leeg
+    previewContent.value = '';
     
-    // 2. Als de editor er is, ververs deze ook even (tegen visuele glitches)
-    if (editorInstance) {
-        editorInstance.refresh();
-    }
-
-    // Laat het icoontje heel even draaien voor de beleving
+    // 2. Wacht een fractie van een seconde en zet dan de nieuwe code erin
     setTimeout(() => {
+        updatePreview();
+        if (editorInstance) editorInstance.refresh();
         isRefreshing.value = false;
-        showToast('Preview ververst', 'info');
-    }, 500);
-};     
+        showToast('Preview hard-reset voltooid', 'info');
+    }, 50); 
+};
         // --- UPLOAD LOGICA ---
         const triggerUpload = () => fileInput.value.click();
 
@@ -577,7 +587,7 @@ const openProject = async (projectId, projectName) => {
             files.value = projectData.files || [];
             history.value = projectData.history || [];
             currentVersion.value = projectData.currentVersion || 1;
-            highestVersion.value = projectData.highestVersion || 1;
+			highestVersion.value = 7;
             projectActive.value = true;
             
             // OPEN ALLE BESTANDEN ALS TABBLADEN
@@ -631,7 +641,7 @@ const openProject = async (projectId, projectName) => {
                 files: initialFiles,
                 history: [],
                 currentVersion: 1,
-                highestVersion: 1
+                highestVersion: 5
             };
 
             try {
@@ -644,7 +654,7 @@ const openProject = async (projectId, projectName) => {
                 files.value = initialFiles;
                 history.value = [];
                 currentVersion.value = 1;
-                highestVersion.value = 1;
+                highestVersion.value = 5;
                 projectActive.value = true;
                 activeFileName.value = 'index.html';
                 newProjectName.value = '';
@@ -679,18 +689,7 @@ const openProject = async (projectId, projectName) => {
             }
         };
 
- const saveToCloud = async (isSilent = false) => {
-    if (!currentProjectId.value || !manager) return;
 
-    // STAP 1: Forceer de huidige editor inhoud in de files array
-    if (editorInstance && activeFileName.value) {
-        const currentContent = editorInstance.getValue();
-        const fileToUpdate = files.value.find(f => f.name === activeFileName.value);
-        if (fileToUpdate) {
-            fileToUpdate.content = currentContent;
-            fileToUpdate.lastModified = Date.now();
-        }
-    }
 
     // STAP 2: Maak de payload (nu met de juiste content)
     const dataPayload = {
@@ -713,25 +712,56 @@ const openProject = async (projectId, projectName) => {
 const createBackup = async (isAuto = false) => {
     isLoading.value = true;
     try {
-        // 1. Maak de snapshot van de huidige staat
-        const snapshot = JSON.parse(JSON.stringify(files.value));
-        
-        // 2. DOORTEL-LOGICA: Zoek het hoogste nummer ooit gebruikt in de geschiedenis
+        // 1. Bereken het versienummer voor de backup die we NU maken
+        // We kijken naar de geschiedenis én de huidige hoogste bekende versie
         const highestInHistory = history.value.length > 0 
             ? Math.max(...history.value.map(h => h.version)) 
-            : currentVersion.value;
+            : 0;
+
+        // Het versienummer van deze nieuwe backup
+        const newVersionNumber = Math.max(currentVersion.value, highestInHistory + 1);
+
+        // 2. Maak de snapshot van de huidige bestanden
+        const snapshot = JSON.parse(JSON.stringify(files.value));
         
-        // 3. Maak het backup-record van de huidige werkversie
         const backupRecord = {
-            version: currentVersion.value,
-            // Gebruik de automatische "Herstart vanaf..." tekst of de handmatige noot
-            note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Project Backup'),
-            timestamp: new Date().toLocaleTimeString('nl-NL', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            }),
+            version: newVersionNumber,
+            note: saveNote.value || (lastRestoredVersion.value ? `Herstel van v${lastRestoredVersion.value}` : 'Project Backup'),
+            timestamp: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }),
             files: snapshot
         };
+
+        // 3. Voeg toe aan de geschiedenis (bovenaan)
+        history.value.unshift(backupRecord);
+
+        // 4. Update de staat voor de VOLGENDE bewerking
+        // De werkversie in de tabbladen wordt nu newVersionNumber + 1
+        currentVersion.value = newVersionNumber + 1;
+        
+        // Zorg dat de hoogste bekende versie in de app-state ook wordt bijgewerkt
+        highestVersion.value = Math.max(highestVersion.value, currentVersion.value);
+        
+        // 5. Reset subversies en status
+        files.value.forEach(f => { f.subVersion = 0; });
+        if (dirtyFiles.value) dirtyFiles.value.clear();
+
+        saveNote.value = '';
+        lastRestoredVersion.value = null;
+
+        // 6. Sla alles op via de manager (die nu ook highestVersion meeneemt)
+        await updateProjectInDB();
+        
+        // 7. Ververs de zijbalk zodat de nieuwe versie direct zichtbaar is in het lijstje
+        await refreshProjectList();
+
+        showToast(`Versie ${newVersionNumber} opgeslagen!`, 'success');
+    } catch (error) {
+        console.error("Backup fout:", error);
+        showToast("Fout bij maken backup", "error");
+    } finally {
+        isLoading.value = false;
+    }
+};
 
         // 4. Voeg toe aan geschiedenis
         history.value.unshift(backupRecord);
@@ -930,28 +960,44 @@ const setActiveFile = (name) => {
         };
 
 const restoreVersion = async (backup, projectId = null) => {
-    // Wissel van project indien nodig
+    // 1. Wissel van project indien nodig
     if (projectId && projectId !== currentProjectId.value) {
         await openProject(projectId);
     }
     
-    if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
-        // BELANGRIJK: Onthoud welk nummer we herstellen voor de saveNote straks
-        lastRestoredVersion.value = backup.version;
-        saveNote.value = `Herstart vanaf v${backup.version}`;
-
-        files.value = JSON.parse(JSON.stringify(backup.files));
-        currentVersion.value = backup.version;
+    if (confirm(`Weet je zeker dat je de inhoud van versie ${backup.version} wilt inladen? Dit wordt opgeslagen als een nieuwe versie.`)) {
         
+        // 2. Bepaal het hoogste nummer ooit om versienummer-botsingen te voorkomen
+        const highestInHistory = history.value.length > 0 
+            ? Math.max(...history.value.map(h => h.version)) 
+            : currentVersion.value;
+
+        // 3. We zetten de teller direct op het volgende vrije nummer
+        currentVersion.value = highestInHistory + 1;
+        highestVersion.value = currentVersion.value;
+        await updateProjectInDB();
+        // 4. Laad de bestanden (Deep Copy)
+        files.value = JSON.parse(JSON.stringify(backup.files));
+        
+        // 5. Bereid de log-notitie voor de volgende "Opslaan" actie voor
+        saveNote.value = `Herstel van v${backup.version}`;
+        lastRestoredVersion.value = backup.version;
+
+        // 6. Reset de 'dirty' status (omdat dit nu onze nieuwe startpunt is)
         if (dirtyFiles.value) {
             dirtyFiles.value.clear();
         }
         
+        // 7. Update UI en Database
         setActiveFile('index.html');
         updatePreview();
-        await updateProjectInDB();
         
-        showToast(`Versie ${backup.version} hersteld. Note klaargezet.`, 'info');
+        // Eerst opslaan in DB...
+        await updateProjectInDB();
+        // ...en dan direct de lijst verversen zodat de sidebar vinkt!
+        await refreshProjectList();
+        
+        showToast(`Inhoud v${backup.version} ingeladen als v${currentVersion.value}`, 'info');
         expandedProjectId.value = null;
     }
 };
@@ -959,7 +1005,7 @@ const restoreVersion = async (backup, projectId = null) => {
         const deleteBackup = async (version) => {
             if (!confirm(`Backup v${version} verwijderen?`)) return;
             history.value = history.value.filter(h => h.version !== version);
-            await saveToCloud(true);
+            await updateProjectInDB(true);
             showToast(`Backup v${version} verwijderd`);
         };
 
