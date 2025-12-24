@@ -931,7 +931,7 @@ const stopServer = async () => {
         const response = await fetch(`${API_URL}/stop-server`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
-        });
+        })
 
         if (response.ok) {
             // FORCEER de status op Stopped
