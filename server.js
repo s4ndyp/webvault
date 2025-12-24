@@ -5,7 +5,7 @@ const app = express();
 
 app.use(express.json({ limit: '50mb' }));
 
-const PUBLISH_DIR = path.join(__dirname, 'published_site');
+const PUBLISH_DIR = '/var/www/published';
 
 // Zorg dat de map bestaat
 fs.ensureDirSync(PUBLISH_DIR);
