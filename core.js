@@ -305,23 +305,32 @@ createApp({
             showToast(`${fileName} bijgewerkt naar v${getFileVersion(fileName)}`, 'success');
         };
 
-        const restoreFileSubVersion = (fileName, historyItem) => {
-            const file = files.value.find(f => f.name === fileName);
-            if (file) {
-                file.content = historyItem.content;
-                file.savedContent = historyItem.content; // Herstel is nu de nieuwe 'clean' state
-                file.subVersion = historyItem.subVersion;
-                
-                if (activeFileName.value === fileName && editorInstance) {
-                    editorInstance.setValue(file.content);
-                    editorInstance.clearHistory();
-                }
-                
-                updatePreview();
-                showToast(`${fileName} hersteld`, 'info');
-                activeFileHistoryTab.value = null; 
-            }
-        };
+ // --- VERVANG DE INHOUD VAN restoreFileSubVersion ---
+const restoreFileSubVersion = (fileName, historyItem) => {
+    const file = files.value.find(f => f.name === fileName);
+    if (file) {
+        file.content = historyItem.content;
+        file.savedContent = historyItem.content; 
+        
+        // Track welke sub-versie nu 'actief' is in de editor
+        file.activeSubVersion = historyItem.subVersion;
+
+        const highestSub = file.fileHistory && file.fileHistory.length > 0 
+            ? Math.max(...file.fileHistory.map(h => h.subVersion)) 
+            : historyItem.subVersion;
+
+        file.subVersion = highestSub + 1;
+        
+        // Directe update van de editor
+        if (activeFileName.value === fileName && editorInstance) {
+            editorInstance.setValue(file.content);
+            showToast(`${fileName} hersteld naar .${historyItem.subVersion}`, 'info');
+        }
+        
+        updatePreview();
+        activeFileHistoryTab.value = null; 
+    }
+};
 
         const updateProjectInDB = async () => {
             if (!currentProjectId.value) return;
@@ -742,13 +751,21 @@ const createBackup = async (isAuto = false) => {
             }),
             files: snapshot
         };
-
+// ============================================================
+        // Reset de 'hersteld' indicators voor de UI
+        lastRestoredVersion.value = null;
+        saveNote.value = ''; // Maak ook het notitieveld weer leeg voor de volgende keer
+        
+        files.value.forEach(f => {
+            f.activeSubVersion = null;
+        });
         // 4. Voeg toe aan geschiedenis
         history.value.unshift(backupRecord);
 
-        // 5. BEPAAL DE VOLGENDE VERSIE: Altijd hoger dan wat er al was
-        // Dit voorkomt dubbele nummers na een herstel
-        currentVersion.value = Math.max(currentVersion.value, highestInHistory) + 1;
+        // 5. BEPAAL DE VOLGENDE VERSIE
+        const nextVer = Math.max(currentVersion.value, highestInHistory) + 1;
+        currentVersion.value = nextVer;
+        highestVersion.value = nextVer; // VOEG DEZE REGEL TOE om de globale teller te syncen
         
         // 6. Reset bestanden voor de nieuwe hoofdversie
         files.value.forEach(f => {
@@ -976,33 +993,43 @@ const setActiveFile = (name) => {
             }
         };
 
-const restoreVersion = async (backup, projectId = null) => {
-    // Wissel van project indien nodig
-    if (projectId && projectId !== currentProjectId.value) {
-        await openProject(projectId);
-    }
-    
+  
+// --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
+const restoreVersion = async (backup) => {
     if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
-        // BELANGRIJK: Onthoud welk nummer we herstellen voor de saveNote straks
+        // Markeer welke versie de bron is
         lastRestoredVersion.value = backup.version;
         saveNote.value = `Herstart vanaf v${backup.version}`;
 
+        // Bestanden overschrijven
         files.value = JSON.parse(JSON.stringify(backup.files));
-        currentVersion.value = backup.version;
         
-        if (dirtyFiles.value) {
-            dirtyFiles.value.clear();
+        // Versiebeheer logica (zoals eerder besproken)
+        const highestInHistory = history.value.length > 0 
+            ? Math.max(...history.value.map(h => h.version)) 
+            : backup.version;
+        
+        currentVersion.value = highestInHistory + 1;
+        highestVersion.value = highestInHistory + 1;
+
+        // FORCEER EDITOR UPDATE
+        // We wachten tot Vue de data heeft verwerkt en herladen dan het actieve bestand in de editor
+        await nextTick();
+        if (activeFileName.value) {
+            const currentFile = files.value.find(f => f.name === activeFileName.value);
+            if (currentFile && editorInstance) {
+                editorInstance.setValue(currentFile.content);
+                editorInstance.clearHistory();
+            }
         }
         
-        setActiveFile('index.html');
         updatePreview();
         await updateProjectInDB();
         
-        showToast(`Versie ${backup.version} hersteld. Note klaargezet.`, 'info');
+        showToast(`Versie ${backup.version} hersteld. Editor bijgewerkt.`, 'success');
         expandedProjectId.value = null;
     }
 };
-
         const deleteBackup = async (version) => {
             if (!confirm(`Backup v${version} verwijderen?`)) return;
             history.value = history.value.filter(h => h.version !== version);

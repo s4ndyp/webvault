@@ -59,13 +59,18 @@
         :class="currentProjectId === proj._id ? 'bg-primary/20 text-white border-l-4 border-primary' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200 border-l-4 border-transparent'"
         class="w-full flex items-center justify-between px-4 py-3 rounded-r-xl transition-all text-sm font-medium cursor-pointer group">
         
-        <div class="flex items-center gap-2 truncate">
-            <i class="fas fa-cube text-xs opacity-50"></i>
-            <span class="truncate">{{ proj.name }}</span>
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-bold">
-                v{{ proj.currentVersion || 1 }}
-            </span>
-        </div>
+      <div class="flex items-center gap-2 truncate">
+    <i class="fas fa-cube text-xs opacity-50"></i>
+    <span class="truncate">{{ proj.name }}</span>
+    <div class="flex flex-col items-start">
+        <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-bold leading-none">
+            v{{ proj.currentVersion || 1 }}
+        </span>
+        <span v-if="proj.lastRestoredVersion" class="text-[8px] text-orange-500 font-medium mt-0.5">
+            <i class="fas fa-history"></i> v{{ proj.lastRestoredVersion }}
+        </span>
+    </div>
+</div>
 
         <div class="flex items-center gap-1">
             <button @click.stop="toggleVersions(proj._id)" class="text-gray-500 hover:text-primary transition p-1">
@@ -157,7 +162,17 @@
                         <button @click="showMobileMenu = !showMobileMenu" class="md:hidden text-gray-300">
                             <i class="fas fa-bars"></i>
                         </button>
-                        <h2 class="font-bold text-white truncate max-w-[200px]">{{ currentProjectName }}</h2>
+                       <div class="flex flex-col">
+    <div class="flex items-center gap-2">
+        <h2 class="font-bold text-white truncate max-w-[200px]">{{ currentProjectName }}</h2>
+        <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
+            v{{ currentVersion }}.0
+        </span>
+    </div>
+    <span v-if="lastRestoredVersion" class="text-[9px] text-orange-400 italic leading-none mt-1">
+        <i class="fas fa-undo-alt mr-1"></i> Gebaseerd op v{{ lastRestoredVersion }}
+    </span>
+</div>
                     </div>
 
  <div v-if="projectActive && viewMode !== 'preview'" class="flex items-center gap-4 bg-gray-800/50 px-4 py-1.5 rounded-2xl border border-gray-700 shadow-inner min-w-[800px] justify-between">
