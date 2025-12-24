@@ -200,11 +200,18 @@ createApp({
  const updatePreview = () => {
     if (!files.value || files.value.length === 0) return;
 
-    // 1. Pak de iframe via de juiste weg
     const iframe = document.querySelector('iframe');
     if (!iframe) return;
 
-    // 2. Haal de content op (jouw vertrouwde logica)
+    // --- DE NIEUWE CHECK ---
+    // Als de server draait (Running), willen we de live-site op :8080 zien.
+    // We stoppen deze functie dan, zodat hij de iframe niet overschrijft.
+    if (publishStatus.value === 'Running') {
+        // We doen niets, de iframe blijft op de URL van poort 8080 staan.
+        return;
+    }
+
+    // 1. Haal de content op
     const getFileContent = (name) => {
         const f = files.value.find(file => file.name === name);
         return f ? f.content : '';
@@ -242,8 +249,10 @@ createApp({
 </body>
 </html>`;
 
-    // 3. DE FIX: We gebruiken de 'srcdoc' methode via JavaScript 
-    // Dit is stabieler dan document.write bij snelle wijzigingen
+    // 2. Verwijder de SRC (de URL) zodat srcdoc weer zichtbaar wordt
+    iframe.removeAttribute('src');
+    
+    // 3. Injecteer de live-editor code
     iframe.srcdoc = completeHtml;
 };
         const setViewMode = (mode) => {
@@ -606,12 +615,16 @@ const openProject = async (projectId, projectName) => {
 
         // File watch voor preview update
         let previewTimeout;
-        watch(files, () => {
-            if (projectActive.value) {
-                clearTimeout(previewTimeout);
-                previewTimeout = setTimeout(updatePreview, 300);
-            }
-        }, { deep: true });
+watch(files, () => {
+    if (projectActive.value) {
+        // Alleen de automatische preview updaten als de server NIET draait
+        // Anders overschrijven we de live-site op poort 8080
+        if (publishStatus.value !== 'Running') {
+            clearTimeout(previewTimeout);
+            previewTimeout = setTimeout(updatePreview, 300);
+        }
+    }
+}, { deep: true });
 
         const createProject = async () => {
             if (!newProjectName.value || !manager) return;
@@ -628,7 +641,7 @@ const openProject = async (projectId, projectName) => {
                 files: initialFiles,
                 history: [],
                 currentVersion: 1,
-                highestVersion: 1
+                highestVersion: 2
             };
 
             try {
@@ -641,7 +654,7 @@ const openProject = async (projectId, projectName) => {
                 files.value = initialFiles;
                 history.value = [];
                 currentVersion.value = 1;
-                highestVersion.value = 1;
+                highestVersion.value = 2;
                 projectActive.value = true;
                 activeFileName.value = 'index.html';
                 newProjectName.value = '';
@@ -841,28 +854,42 @@ const publishProject = async (project, backup) => {
             })
         });
         const result = await response.json();
+        
         if (result.success) {
             publishStatus.value = 'Running';
             showPublishModal.value = false;
+            
+            // DE FIX: Pak de iframe en verander de SRC naar de live URL
+            const iframe = document.querySelector('iframe');
+            if (iframe) {
+                // Verwijder srcdoc (die heeft voorrang op src)
+                iframe.removeAttribute('srcdoc');
+                // Zet de URL naar de poort van de gepubliceerde site
+                iframe.src = `http://${window.location.hostname}:8080?v=${backup.version}`;
+            }
+            
             showToast(result.message, 'success');
         }
     } catch (e) {
-        showToast("Publicatie mislukt via " + PUBLISH_API, "error");
+        showToast("Publicatie mislukt", "error");
     } finally {
         isLoading.value = false;
     }
 };
 
 const stopServer = async () => {
-    if (!confirm("Weet je zeker dat je de live website wilt offline halen?")) return;
+    if (!confirm("Weer terug naar live-preview mode?")) return;
     try {
         await fetch(`${API_URL}/api/stop-server`, { method: 'POST' });
         publishStatus.value = 'Stopped';
-        showToast("Server gestopt");
+        
+        // Terug naar de normale preview mode
+        updatePreview(); 
+        showToast("Live site offline, terug naar editor-preview");
     } catch (e) {
-        showToast("Kon server niet stoppen", "error");
+        showToast("Fout bij stoppen", "error");
     }
-};     
+};   
         
         
         
