@@ -242,8 +242,15 @@
             <div class="flex items-center gap-2">
                 <i :class="getFileIcon(tab)" class="text-xs"></i>
                 <div class="flex flex-col leading-none">
-                    <div class="flex items-center gap-2">
-                        <span class="text-sm font-semibold">{{ tab }}</span>
+                   <div class="flex items-center gap-2">
+    <span class="text-sm font-semibold" :class="{'text-blue-400': files.find(f => f.name === tab)?.activeSubVersion}">
+        {{ tab }}
+    </span>
+    
+    <span v-if="files.find(f => f.name === tab)?.activeSubVersion" 
+          class="text-[9px] bg-blue-500/20 text-blue-300 px-1 rounded border border-blue-500/20 font-mono">
+        .{{ files.find(f => f.name === tab).activeSubVersion }}
+    </span>
                         <div class="flex items-center gap-1">
                             <button v-if="files.find(f => f.name === tab)?.fileHistory?.length > 0"
                                     @click.stop="toggleFileHistory(tab)"
