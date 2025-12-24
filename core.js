@@ -641,7 +641,7 @@ watch(files, () => {
                 files: initialFiles,
                 history: [],
                 currentVersion: 1,
-                highestVersion: 2
+                highestVersion: 1
             };
 
             try {
@@ -654,7 +654,7 @@ watch(files, () => {
                 files.value = initialFiles;
                 history.value = [];
                 currentVersion.value = 1;
-                highestVersion.value = 2;
+                highestVersion.value = 1;
                 projectActive.value = true;
                 activeFileName.value = 'index.html';
                 newProjectName.value = '';
@@ -833,12 +833,35 @@ const closeTab = (name) => {
         
 const checkServerStatus = async () => {
     try {
-        // Gebruik PUBLISH_API (poort 80 van de nieuwe server, die proxied naar 5000)
-        const res = await fetch(`${PUBLISH_API}/api/server-status`);
+        // We voegen een uniek getal toe (?t=...) om te voorkomen dat de browser 
+        // een oud antwoord uit het geheugen serveert (cache-busting)
+        const res = await fetch(`${PUBLISH_API}/api/server-status?t=${Date.now()}`, {
+            cache: 'no-store' // Extra instructie: niet cachen!
+        });
+
+        if (!res.ok) throw new Error('Server onbereikbaar');
+
         const data = await res.json();
-        publishStatus.value = data.status;
+        
+        // Alleen de waarde aanpassen als deze echt verschilt
+        if (publishStatus.value !== data.status) {
+            console.log(`[Status] Server is nu: ${data.status}`);
+            publishStatus.value = data.status;
+            
+            // Als de server herstart is naar Running, update de iframe
+            if (data.status === 'Running' && !document.querySelector('iframe').src.includes(':8080')) {
+                 const iframe = document.querySelector('iframe');
+                 if (iframe) {
+                    iframe.removeAttribute('srcdoc');
+                    iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
+                 }
+            }
+        }
     } catch (e) {
-        publishStatus.value = 'Stopped';
+        // BELANGRIJK: Bij een netwerkfout zetten we de status NIET direct op Stopped.
+        // We laten de huidige status staan, want een tijdelijke hapering 
+        // betekent niet dat de website offline is.
+        console.warn('[Status Check] Kon server status niet ophalen:', e.message);
     }
 };
 const publishProject = async (project, backup) => {
