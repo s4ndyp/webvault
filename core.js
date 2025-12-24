@@ -40,7 +40,7 @@ setInterval(async () => {
         }
     }
 }, 60000); // 60 seconden
-}
+ }
 }
 // ============================================
 // VUE APP
@@ -449,33 +449,39 @@ const setActiveFileWithCleanCheck = (name) => {
         
 watch(searchQuery, (newQuery) => {
     if (!editorInstance) return;
-    
-    // Verwijder oude highlights
+
+    // 1. Verwijder de oude markeringen (highlights)
     if (editorInstance.state.searchOverlay) {
         editorInstance.removeOverlay(editorInstance.state.searchOverlay);
     }
 
+    // 2. Als het veld leeg is of te kort: reset alles en stop
     if (!newQuery || newQuery.length < 2) {
+        searchMatches.value = "";
         totalMatches.value = 0;
         currentMatchIndex.value = 0;
         return;
     }
 
-    // Markeer alle resultaten in de editor
+    // 3. Teken de nieuwe markeringen in de editor
     editorInstance.state.searchOverlay = {
         token: function(stream) {
             const query = newQuery.toLowerCase();
             if (stream.string.toLowerCase().slice(stream.pos).indexOf(query) == 0) {
                 for (var i = 0; i < query.length; i++) stream.next();
-                return "searching";
+                return "searching"; 
             }
             stream.next();
         }
     };
     editorInstance.addOverlay(editorInstance.state.searchOverlay);
-    
-    // Eerste match direct focussen en tellen
-    findNext();
+
+    // 4. Update de tellers en spring direct naar het eerste resultaat
+    // We gebruiken een kleine timeout zodat CodeMirror de tijd heeft om de overlay te verwerken
+    setTimeout(() => {
+        updateMatchCounters();
+        findNext(); 
+    }, 10);
 });
         
         
@@ -1288,6 +1294,7 @@ const restoreVersion = async (backup) => {
             findPrev, 
             totalMatches,
             currentMatchIndex,
+            updateMatchCounters,
             apiUrl
         };
     }
