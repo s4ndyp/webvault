@@ -218,104 +218,75 @@
                 </div>
 
 <div class="flex bg-darkpaper border-b border-gray-800 overflow-x-auto no-scrollbar shrink-0 h-12">
-    
-    <div v-for="tab in openTabs" :key="tab"
-        @click="setActiveFile(tab)"
-        :class="activeFileName === tab ? 'bg-dark border-t-2 border-primary text-white shadow-[0_-4px_10px_rgba(99,102,241,0.1)]' : 'text-gray-400 hover:bg-gray-800 border-t-2 border-transparent'"
-        class="flex items-center gap-2 px-4 py-2 cursor-pointer transition-all text-sm font-medium whitespace-nowrap group min-w-[170px] justify-between relative border-r border-gray-700">
         
-        <div class="flex items-center gap-2">
-            <i :class="getFileIcon(tab)" class="text-xs"></i>
-            <div class="flex flex-col leading-none">
-                <div class="flex items-center gap-2">
-                    <span class="text-sm font-semibold">{{ tab }}</span>
-                    
-                    <div class="flex items-center gap-1 opacity-100 group-hover:opacity-100 transition-opacity">
-                        <button v-if="files.find(f => f.name === tab)?.fileHistory?.length > 0"
-                                @click.stop="toggleFileHistory(tab)"
-                                class="text-[12px] text-gray-500 hover:text-blue-500 transition p-0.5"
-                                title="Versies bekijken">
-                            <i class="fas fa-history"></i>
-                        </button>
+        <div v-for="tab in openTabs" :key="tab"
+            @click="setActiveFile(tab)"
+            :class="activeFileName === tab ? 'bg-dark border-t-2 border-primary text-white shadow-[0_-4px_10px_rgba(99,102,241,0.1)]' : 'text-gray-400 hover:bg-gray-800 border-t-2 border-transparent'"
+            class="flex items-center gap-4 px-4 py-2 cursor-pointer transition-all text-sm font-medium whitespace-nowrap group min-w-[200px] justify-between relative border-r border-gray-700 h-full">
+            
+            <div class="flex items-center gap-2">
+                <i :class="getFileIcon(tab)" class="text-xs"></i>
+                <div class="flex flex-col leading-none">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-semibold">{{ tab }}</span>
+                        <div class="flex items-center gap-1">
+                            <button v-if="files.find(f => f.name === tab)?.fileHistory?.length > 0"
+                                    @click.stop="toggleFileHistory(tab)"
+                                    class="text-[10px] text-gray-500 hover:text-blue-500 transition"><i class="fas fa-history"></i></button>
+                            <button @click.stop="downloadSingleFileZip(files.find(f => f.name === tab))"
+                                    class="text-[10px] text-gray-500 hover:text-green-500 transition"><i class="fas fa-download"></i></button>
+                        </div>
+                    </div>
+                    <span class="text-[10px] text-green-500 font-bold">v{{ getFileVersion(tab) }}</span>
+                </div>
+            </div>
 
-                        <button @click.stop="downloadSingleFileZip(files.find(f => f.name === tab))"
-                                class="text-[12px] text-gray-500 hover:text-green-500 transition p-0.5"
-                                title="Download dit bestand als ZIP">
-                            <i class="fas fa-download"></i>
-                        </button>
+            <div class="flex items-center gap-2">
+                <template v-if="dirtyFiles.has(tab)">
+                    <input v-model="saveNote" placeholder="Note..." @click.stop @keyup.enter="saveSingleFile(tab)"
+                           class="bg-dark/50 border border-gray-600 text-[10px] px-2 py-0.5 rounded w-20 focus:border-primary outline-none text-white">
+                    <button @click.stop="saveSingleFile(tab)" class="bg-green-600 text-white text-[9px] px-2 py-1 rounded font-bold animate-pulse">SAVE</button>
+                </template>
+                <i @click.stop="closeTab(tab)" class="fas fa-times text-xs text-gray-600 hover:text-red-500 transition-colors p-1"></i>
+            </div>
+
+            <div v-if="activeFileHistoryTab === tab" class="absolute top-full left-0 w-64 bg-[#1e293b] border border-gray-600 rounded-b-xl shadow-2xl z-[50] overflow-hidden">
+                <div class="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
+                    <span>Historie: {{ tab }}</span>
+                    <i class="fas fa-times cursor-pointer" @click.stop="toggleFileHistory(null)"></i>
+                </div>
+                <div class="max-h-60 overflow-y-auto no-scrollbar">
+                    <div v-for="h in files.find(f => f.name === tab).fileHistory" :key="h.subVersion"
+                         class="group px-4 py-3 text-[11px] hover:bg-primary/20 flex justify-between items-center text-gray-200 border-b border-gray-700/50 transition-colors">
+                        <div @click.stop="restoreFileSubVersion(tab, h)" class="flex flex-col flex-1 cursor-pointer">
+                            <span class="font-bold text-white">Versie .{{ h.subVersion }}</span>
+                            <span class="text-[9px] opacity-60">{{ h.timestamp }}</span>
+                        </div>
                     </div>
                 </div>
-                <span class="text-[14px] text-green-500 font-bold">v{{ getFileVersion(tab) }}</span>
             </div>
+        </div> <div @click="showNewFileModal = true" class="flex items-center justify-center px-5 h-full text-gray-400 hover:bg-gray-800 hover:text-white cursor-pointer border-r border-gray-700 transition-all shrink-0">
+            <i class="fas fa-plus"></i>
         </div>
-
-        <button @click.stop="closeTab(tab)" 
-                class="ml-2 text-gray-600 hover:text-red-500 opacity-100 group-hover:opacity-100 transition-all">
-            <i class="fas fa-times text-xs"></i>
-        </button>
     </div>
 
-
-<div class="flex items-center gap-2">
-    <input v-if="dirtyFiles.has(tab)" 
-           v-model="saveNote" 
-           placeholder="Omschrijving..." 
-           @keyup.enter="saveSingleFile(tab)"
-           class="bg-dark/50 border border-gray-600 text-[10px] px-2 py-0.5 rounded w-20 focus:w-32 transition-all focus:border-primary outline-none text-white">
-    
-    <button v-if="dirtyFiles.has(tab)" 
-            @click.stop="saveSingleFile(tab)" 
-            class="bg-green-600 hover:bg-green-500 text-white text-[9px] px-2 py-1 rounded font-bold shadow-lg flex items-center gap-1">
-        <i class="fas fa-check"></i> SAVE
-    </button>
-    <i @click.stop="closeTab(tab)" class="fas fa-times text-[10px] opacity-0 group-hover:opacity-100 hover:text-red-400 p-1"></i>
-</div>
-
-<div v-if="activeFileHistoryTab === tab" 
-     class="absolute top-full left-0 mt-0 w-64 bg-[#1e293b] border border-gray-600 rounded-b-xl shadow-2xl z-[9999] overflow-hidden">
-    <div class="px-3 py-2 text-[10px] font-bold text-gray-400 uppercase bg-gray-800/50 border-b border-gray-700 flex justify-between items-center">
-        <span>Bestandshistorie</span>
-        <i class="fas fa-times cursor-pointer hover:text-white" @click.stop="toggleFileHistory(null)"></i>
-    </div>
-    <div class="max-h-60 overflow-y-auto no-scrollbar">
-        <div v-for="h in files.find(f => f.name === tab).fileHistory" :key="h.subVersion"
-             class="group px-4 py-3 text-[11px] hover:bg-primary/20 flex justify-between items-center text-gray-200 border-b border-gray-700/50 last:border-0 transition-colors">
-            <div @click.stop="restoreFileSubVersion(tab, h)" class="flex flex-col flex-1 cursor-pointer">
-                <span class="font-bold text-white">Versie .{{ h.subVersion }}</span>
-                <span class="text-[9px] opacity-60">{{ h.timestamp }}</span>
+    <div class="flex-1 flex overflow-hidden relative">
+        <div v-show="viewMode !== 'preview'" :style="{ width: viewMode === 'split' ? '50%' : '100%' }" class="flex flex-col bg-darkpaper border-r border-gray-800 transition-all">
+            <div class="bg-gray-800/30 border-b border-gray-700/50 p-2 flex justify-between items-center text-[10px] text-gray-500 px-4 uppercase font-bold tracking-widest">
+                <span>Code Editor</span>
+                <span v-if="savedMessage" class="text-green-400 animate-pulse">{{ savedMessage }}</span>
             </div>
-            <button @click.stop="deleteFileHistoryItem(tab, h.subVersion)" class="text-gray-600 hover:text-red-500 p-2 opacity-0 group-hover:opacity-100 transition">
-                <i class="fas fa-trash-alt text-[10px]"></i>
-            </button>
+            <div ref="editorContainer" class="flex-1 w-full h-full text-base"></div>
         </div>
-        <div v-if="!files.find(f => f.name === tab)?.fileHistory?.length" class="p-4 text-center text-[10px] text-gray-500 italic">
-            Geen historie beschikbaar
-        </div>
-   
-</div>
-    </div> <div @click="showNewFileModal = true" 
-         class="flex items-center justify-center px-5 py-2 text-gray-400 hover:bg-gray-800 hover:text-white cursor-pointer border-r border-gray-700 transition-all shrink-0">
-        <i class="fas fa-plus"></i>
-   
-     </div>       
-      </div>
-                <div class="flex-1 flex overflow-hidden relative">
-                    <div v-show="viewMode !== 'preview'" :style="{ width: viewMode === 'split' ? '50%' : '100%' }" class="flex flex-col bg-darkpaper transition-all duration-300 border-r border-gray-800">
-                        <div class="bg-gray-800/30 border-b border-gray-700/50 p-2 flex justify-between items-center text-[10px] text-gray-500 px-4 uppercase tracking-widest font-bold">
-                            <span>Code Editor</span>
-                            <span v-if="savedMessage" class="text-green-400 animate-pulse normal-case tracking-normal font-normal">{{ savedMessage }}</span>
-                        </div>
-                        <div ref="editorContainer" class="flex-1 w-full h-full text-base"></div>
-                    </div>
 
-                    <div v-show="viewMode !== 'code'" :style="{ width: viewMode === 'split' ? '50%' : '100%' }" class="hidden md:flex flex-1 w-full flex flex-col bg-slate-900 relative transition-all duration-300">
-                        <div class="bg-indigo-900/20 border-b border-indigo-500/10 p-2 flex justify-between items-center text-[10px] text-indigo-400/60 px-4 uppercase tracking-widest font-bold">
-                            <span>Live Voorbeeld</span>
-                            <span class="text-10px uppercase font-bold tracking-wider">Browser Render</span>
-                        </div>
-                        <iframe :srcdoc="previewContent" class="w-full h-full border-none bg-slate-900" sandbox="allow-scripts allow-modals allow-same-origin allow-forms"></iframe>
-                    </div>
-                </div>
+        <div v-show="viewMode !== 'code'" :style="{ width: viewMode === 'split' ? '50%' : '100%' }" class="flex-1 flex flex-col bg-slate-900 transition-all">
+            <div class="bg-indigo-900/20 border-b border-indigo-500/10 p-2 flex justify-between items-center text-[10px] text-indigo-400/60 px-4 uppercase font-bold tracking-widest">
+                <span>Live Voorbeeld</span>
+            </div>
+            <iframe :srcdoc="previewContent" class="w-full h-full border-none bg-slate-900" sandbox="allow-scripts allow-modals allow-same-origin allow-forms"></iframe>
+        </div>
+    </div>
+</div>
    <!--         </div> -->
         </main>
 
