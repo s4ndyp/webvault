@@ -928,27 +928,32 @@ const stopServer = async () => {
         // Direct visueel op 'Stopping' zetten
         publishStatus.value = 'Stopping...';
         
-        const response = await fetch(`${API_URL}/stop-server`, {
+        // FIX 1: Gebruik PUBLISH_API en het juiste pad /api/stop-server
+        // FIX 2: Puntkomma toegevoegd na de fetch call
+        const response = await fetch(`${PUBLISH_API}/api/stop-server`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
-        })
+        });
 
         if (response.ok) {
             // FORCEER de status op Stopped
             publishStatus.value = 'Stopped';
             showToast('Server succesvol gestopt', 'info');
             
-            // Optioneel: Update de lokale manager cache direct zodat de interval 
-            // niet een oude status ophaalt
+            // Optioneel: Update de lokale manager cache direct
             if (manager) {
+                // Let op: updateCache is vaak een async functie
                 await manager.updateCache('serverStatus', { status: 'Stopped' });
             }
+        } else {
+            // Als de response niet OK is (bijv. 404 of 500)
+            throw new Error(`Server reageerde met status: ${response.status}`);
         }
     } catch (err) {
         console.error('Fout bij stoppen server:', err);
         showToast('Kon server niet stoppen', 'error');
-        // Bij fout halen we de echte status weer op
-        checkServerStatus(); 
+        // Bij fout halen we de echte status weer op om de UI te resetten
+        await checkServerStatus(); 
     }
 };
         
