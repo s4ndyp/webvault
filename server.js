@@ -20,11 +20,14 @@ app.post('/api/publish', async (req, res) => {
         // 1. Maak de map leeg voor een schone installatie
         await fs.emptyDir(PUBLISH_DIR);
 
-        // 2. Schrijf elk bestand weg
-        for (const file of files) {
-            const filePath = path.join(PUBLISH_DIR, file.name);
-            await fs.outputFile(filePath, file.content);
-        }
+// In server.js in de publish route:
+for (const file of files) {
+    const filePath = path.join(PUBLISH_DIR, file.name);
+    await fs.outputFile(filePath, file.content);
+    
+    // Geef NGINX leesrechten (644 = eigenaar rw, groep r, rest r)
+    await fs.chmod(filePath, 0o644); 
+}
 
         serverStatus = "Running";
         console.log(`[Server] Project ${projectId} v${version} gepubliceerd.`);
