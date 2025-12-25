@@ -100,6 +100,7 @@ createApp({
 		const searchMatches = ref('');
         const showPublishModal = ref(false);
 		const publishStatus = ref('Stopped'); // 'Stopped' of 'Running'
+		const hostname = window.location.hostname; // Maak de hostname beschikbaar voor de HTML
 		const selectedPublishVersion = ref(null);
         const isRefreshing = ref(false);
         const totalMatches = ref(0);
@@ -1457,6 +1458,7 @@ const restoreVersion = async (backup) => {
             currentMatchIndex,
             updateMatchCounters,
             beautifyCode,
+			hostname,
             apiUrl
         };
     }
