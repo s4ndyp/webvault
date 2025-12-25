@@ -16,8 +16,18 @@ let manager = null;
 async function initManager() {
     if (!manager) {
         manager = new OfflineManager(API_URL, CLIENT_ID, APP_NAME);
-        console.log(`[Manager] Geïnitialiseerd: ${APP_NAME} @ ${API_URL} (Client: ${CLIENT_ID})`);
+        console.log(`[Manager] Geïnitialiseerd: ${APP_NAME}`);
         
+        // --- DE TOEVOEGING: Forceer ophalen bij start ---
+        try {
+            console.log('[Manager] Initiële data ophalen uit cloud...');
+            // We refreshen de 'projects' collectie direct bij het opstarten
+            await manager.refreshCache('projects'); 
+            console.log('[Manager] Cloud data succesvol gesynchroniseerd.');
+        } catch (e) {
+            console.warn('[Manager] Kon initiële data niet ophalen (offline?), we werken verder met lokale cache.');
+        }
+
         // Sync outbox wanneer verbinding hersteld
         window.addEventListener('online', async () => {
             console.log('[Manager] Verbinding hersteld, syncing...');
@@ -25,16 +35,18 @@ async function initManager() {
             await refreshProjectList();
         });
         
-        // Auto-refresh elke 60 seconden (actieve sync)
+        // De bestaande setInterval voor auto-sync
         setInterval(async () => {
-            if (navigator.onLine && manager) {
+            if (navigator.onLine && manager && typeof publishStatus !== 'undefined' && publishStatus.value !== 'Stopping...') {
+                console.log('[Manager] Automatische cache refresh...');
                 await manager.refreshCache('projects');
+                if (publishStatus.value !== 'Stopped') {
+                    await checkServerStatus();
+                }
             }
         }, 60000);
     }
-    return manager;
 }
-
 // ============================================
 // VUE APP
 // ============================================
@@ -80,6 +92,8 @@ createApp({
 		const publishStatus = ref('Stopped'); // 'Stopped' of 'Running'
 		const selectedPublishVersion = ref(null);
         const isRefreshing = ref(false);
+        const totalMatches = ref(0);
+		const currentMatchIndex = ref(0);
 
         const toggleFileHistory = (tab) => {
     	activeFileHistoryTab.value = activeFileHistoryTab.value === tab ? null : tab;
@@ -93,31 +107,35 @@ createApp({
         ];
 
  // --- INIT ---
-        onMounted(async () => {
-            try {
-                // 1. Start de manager en haal projecten op
-                await initManager();
-                await refreshProjectList();
-            } catch (e) {
-                console.error('[Init Error]', e);
-                showToast('Fout bij starten manager', 'error');
-            }
-            
-            // 2. Start de hoofd-timer (elke minuut)
-            timerInterval = setInterval(async () => {
-                currentTime.value = Date.now();
-                
-                // Optioneel: Check elke minuut ook de server status automatisch
-                if (navigator.onLine) {
-                    await checkServerStatus();
-                }
-            }, 60000);
+// --- INIT ---
+onMounted(async () => {
+    try {
+        isLoading.value = true; // Toon een spinner tijdens het laden
+        
+        // 1. Start de manager (deze wacht nu op de cloud data)
+        await initManager();
+        
+        // 2. Pas als de manager klaar is, vullen we de projectList in de UI
+        await refreshProjectList();
+        
+        console.log(`[App] Klaar! ${projectList.value.length} projecten geladen.`);
+    } catch (e) {
+        console.error('[Init Error]', e);
+        showToast('Fout bij starten manager', 'error');
+    } finally {
+        isLoading.value = false;
+    }
+    
+    // Start de timers voor status checks
+    timerInterval = setInterval(async () => {
+        currentTime.value = Date.now();
+        if (navigator.onLine) {
+            await checkServerStatus();
+        }
+    }, 60000);
 
-            // 3. Voer de eerste check direct uit bij het opstarten
-            await checkServerStatus(); 
-            
-            console.log('[App] Initialisatie voltooid. Server status:', publishStatus.value);
-        });
+    await checkServerStatus(); 
+});
 
 // --- CODEMIRROR EDITOR SETUP ---
         const initEditor = () => {
@@ -274,35 +292,37 @@ createApp({
             return `${currentVersion.value}.${file.subVersion || 0}`;
         };
 
-        const saveSingleFile = async (fileName) => {
+const saveSingleFile = async (fileName) => {
             const fileIndex = files.value.findIndex(f => f.name === fileName);
             if (fileIndex === -1) return;
 
             const file = files.value[fileIndex];
             if (!file.fileHistory) file.fileHistory = [];
             
+            // We slaan nu ook de 'major' versie op voor het volledige nummer (bijv 8.1)
             file.fileHistory.unshift({
+                majorVersion: currentVersion.value,
                 subVersion: file.subVersion || 0,
                 content: file.content,
-                note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Handmatige wijziging'),
+                note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Wijziging opgeslagen'),
                 timestamp: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
             });
 
             if (file.fileHistory.length > 20) file.fileHistory.pop();
             file.subVersion = (file.subVersion || 0) + 1;
             
-            // UPDATE DE "CLEAN" STATE
             file.savedContent = file.content; 
             dirtyFiles.value.delete(fileName);
             saveNote.value = ''; 
             
+            // Direct opslaan in de database
             await updateProjectInDB();
 
             if (editorInstance && activeFileName.value === fileName) {
                 editorInstance.clearHistory();
             }
 
-            showToast(`${fileName} bijgewerkt naar v${getFileVersion(fileName)}`, 'success');
+            showToast(`${fileName} opgeslagen als v${currentVersion.value}.${file.subVersion - 1}`, 'success');
         };
 
  // --- VERVANG DE INHOUD VAN restoreFileSubVersion ---
@@ -371,34 +391,103 @@ const restoreFileSubVersion = (fileName, historyItem) => {
         const redo = () => { if (editorInstance) editorInstance.redo(); };
 
         // --- ZOEK & VERVANG ---
-        const findNext = () => {
-            if (!editorInstance || !searchQuery.value) return;
-            // CodeMirror search addon moet geladen zijn voor getSearchCursor
-            if (editorInstance.getSearchCursor) {
-                const cursor = editorInstance.getSearchCursor(searchQuery.value);
-                if (cursor.findNext()) {
-                    editorInstance.setSelection(cursor.from(), cursor.to());
-                    editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 20);
-                }
-            } else {
-                // Fallback als addon niet geladen is
-                const content = editorInstance.getValue();
-                const index = content.indexOf(searchQuery.value);
-                if (index !== -1) {
-                    const pos = editorInstance.posFromIndex(index);
-                    const endPos = editorInstance.posFromIndex(index + searchQuery.value.length);
-                    editorInstance.setSelection(pos, endPos);
-                }
-            }
-        };
+const findNext = () => {
+    if (!editorInstance || !searchQuery.value) return;
+    
+    // Forceer focus naar de editor
+    editorInstance.focus();
+    
+    // Pak de huidige cursorpositie van de SELECTIE (het einde daarvan)
+    const currentCursor = editorInstance.getCursor("to");
+    const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor);
+    
+    if (!cursor.findNext()) {
+        // Als we onderaan zijn, begin bovenaan opnieuw
+        const startCursor = {line: 0, ch: 0};
+        const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, startCursor);
+        if (wrapCursor.findNext()) {
+            editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
+            editorInstance.scrollIntoView({from: wrapCursor.from(), to: wrapCursor.to()}, 150);
+        }
+    } else {
+        // Gevonden! Selecteer het resultaat
+        editorInstance.setSelection(cursor.from(), cursor.to());
+        editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
+    }
+    
+    // Update de tellers direct
+    setTimeout(updateMatchCounters, 50);
+};
 
-        const replaceAll = () => {
+const findPrev = () => {
+    if (!editorInstance || !searchQuery.value) return;
+    
+    editorInstance.focus();
+    
+    // Pak de huidige cursorpositie van de SELECTIE (het begin daarvan)
+    const currentCursor = editorInstance.getCursor("from");
+    const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor);
+    
+    if (!cursor.findPrevious()) {
+        // Als we bovenaan zijn, ga naar de allerlaatste match onderaan
+        const endCursor = {line: editorInstance.lineCount() - 1};
+        const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, endCursor);
+        if (wrapCursor.findPrevious()) {
+            editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
+            editorInstance.scrollIntoView({from: wrapCursor.from(), to: wrapCursor.to()}, 150);
+        }
+    } else {
+        editorInstance.setSelection(cursor.from(), cursor.to());
+        editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
+    }
+    
+    setTimeout(updateMatchCounters, 50);
+};
+
+const updateMatchCounters = () => {
+    if (!editorInstance || !searchQuery.value) {
+        totalMatches.value = 0;
+        currentMatchIndex.value = 0;
+        return;
+    }
+
+    const content = editorInstance.getValue();
+    const query = searchQuery.value;
+    
+    // Tel totaal aantal matches (case-insensitive)
+    const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const matches = content.match(regex);
+    totalMatches.value = matches ? matches.length : 0;
+
+    if (totalMatches.value > 0) {
+        // Bepaal welke match momenteall geselecteerd is
+        const cursorFrom = editorInstance.getCursor("from");
+        const allCursor = editorInstance.getSearchCursor(query, {line: 0, ch: 0});
+        let count = 0;
+        let foundIndex = 0;
+
+        while (allCursor.findNext()) {
+            count++;
+            // Als de match die we nu vinden overeenkomt met de cursorpositie
+            if (allCursor.from().line === cursorFrom.line && allCursor.from().ch === cursorFrom.ch) {
+                foundIndex = count;
+            }
+        }
+        currentMatchIndex.value = foundIndex || 1;
+    } else {
+        currentMatchIndex.value = 0;
+    }
+};
+        
+         const replaceAll = () => {
             if (!editorInstance || !searchQuery.value) return;
             const content = editorInstance.getValue();
             const newContent = content.split(searchQuery.value).join(replaceQuery.value);
             editorInstance.setValue(newContent);
-            showToast('Alles vervangen', 'success');
-        };
+            showToast('Alles vervangen', 'success');       
+ };       
+        
+        
         
 // Zorg dat we bij het OPENEN van een file of project de 'originalContent' vastleggen
 const setActiveFileWithCleanCheck = (name) => {
@@ -414,39 +503,40 @@ const setActiveFileWithCleanCheck = (name) => {
 watch(searchQuery, (newQuery) => {
     if (!editorInstance) return;
 
+    // 1. Verwijder oude highlights
     if (editorInstance.state.searchOverlay) {
         editorInstance.removeOverlay(editorInstance.state.searchOverlay);
     }
 
+    // 2. Reset tellers bij leeg veld
     if (!newQuery || newQuery.length < 2) {
-        searchMatches.value = "";
+        totalMatches.value = 0;
+        currentMatchIndex.value = 0;
         return;
     }
 
+    // 3. Teken de highlights (zonder focus te verplaatsen!)
     editorInstance.state.searchOverlay = {
         token: function(stream) {
-            // Maak een regex die hoofdlettergevoeligheid negeert
             const query = newQuery.toLowerCase();
-            
-            // Kijk of de huidige tekst in de stream begint met onze zoekterm
             if (stream.string.toLowerCase().slice(stream.pos).indexOf(query) == 0) {
-                // We hebben een match! Markeer het aantal karakters van de zoekterm
                 for (var i = 0; i < query.length; i++) stream.next();
-                return "searching"; // Geef de class terug
+                return "searching"; 
             }
-
-            // Geen match? Ga naar het volgende karakter
             stream.next();
         }
     };
-
     editorInstance.addOverlay(editorInstance.state.searchOverlay);
 
-    // Matches tellen (blijft hetzelfde)
-    const content = editorInstance.getValue();
-    const count = (content.toLowerCase().split(newQuery.toLowerCase()).length - 1);
-    searchMatches.value = count > 0 ? `${count} gevonden` : "0 gevonden";
+    // 4. Update alleen de tellers, maar GEEN findNext() aanroepen tijdens het typen
+    // Hierdoor blijft je cursor gewoon in het invoerveld staan.
+    setTimeout(() => {
+        updateMatchCounters();
+    }, 20);
 });
+
+
+
         
         
         // --- VERSIE INSERTIE ---
@@ -489,6 +579,60 @@ watch(searchQuery, (newQuery) => {
         showToast("Download mislukt", "error");
     }
 }; 
+
+        
+const resetProjectHistory = async (proj) => {
+    const msg = `Weet je zeker dat je alle historie van '${proj.name}' wilt wissen?\n\nJe krijgt eerst een volledige ZIP van alle versies, daarna wordt het project gereset naar v1.`;
+    if (!confirm(msg)) return;
+
+    isLoading.value = true;
+    try {
+        // 1. MAAK DE ARCHIEF-ZIP
+        const zip = new JSZip();
+        const mainFolder = zip.folder(`archive_${proj.name}_v${proj.currentVersion}`);
+        
+        // Loop door de historie en voeg elke versie toe als mapje
+        proj.history.forEach(backup => {
+            const versionFolder = mainFolder.folder(`v${backup.version}_${backup.timestamp.replace(/:/g, '-')}`);
+            backup.files.forEach(file => {
+                versionFolder.file(file.name, file.content);
+            });
+        });
+
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, `FULL_ARCHIVE_${proj.name}.zip`);
+        showToast("Archief gedownload, nu opschonen...", "info");
+
+        // 2. PROJECT RESETTEN NAAR v1
+        const resetProject = {
+            ...proj,
+            currentVersion: 1,
+            highestVersion: 1,
+            history: [], // Wis alle historie
+            lastRestoredVersion: null
+        };
+
+        await manager.saveSmartDocument('projects', resetProject);
+        
+        // Als we dit project open hadden, direct updaten
+        if (currentProjectId.value === proj._id) {
+            currentVersion.value = 1;
+            highestVersion.value = 1;
+            history.value = [];
+        }
+
+        await refreshProjectList();
+        showToast("Project gereset naar v1", "success");
+    } catch (e) {
+        console.error(e);
+        showToast("Reset mislukt", "error");
+    } finally {
+        isLoading.value = false;
+    }
+};        
+        
+        
+        
         
 const forcePreviewRefresh = () => {
     isRefreshing.value = true;
@@ -918,18 +1062,33 @@ const publishProject = async (project, backup) => {
 };
 
 const stopServer = async () => {
-    if (!confirm("Weer terug naar live-preview mode?")) return;
     try {
-        await fetch(`${API_URL}/api/stop-server`, { method: 'POST' });
-        publishStatus.value = 'Stopped';
+        // Direct visueel op 'Stopping' zetten
+        publishStatus.value = 'Stopping...';
         
-        // Terug naar de normale preview mode
-        updatePreview(); 
-        showToast("Live site offline, terug naar editor-preview");
-    } catch (e) {
-        showToast("Fout bij stoppen", "error");
+       const response = await fetch(`${PUBLISH_API}/api/stop-server`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+            // FORCEER de status op Stopped
+            publishStatus.value = 'Stopped';
+            showToast('Server succesvol gestopt', 'info');
+            
+            // Optioneel: Update de lokale manager cache direct zodat de interval 
+            // niet een oude status ophaalt
+            if (manager) {
+                await manager.updateCache('serverStatus', { status: 'Stopped' });
+            }
+        }
+    } catch (err) {
+        console.error('Fout bij stoppen server:', err);
+        showToast('Kon server niet stoppen', 'error');
+        // Bij fout halen we de echte status weer op
+        checkServerStatus(); 
     }
-};   
+};
         
         
         
@@ -993,18 +1152,53 @@ const setActiveFile = (name) => {
             }
         };
 
-  
+  const publishCurrentState = async () => {
+    isLoading.value = true;
+    try {
+        // We pakken de huidige files direct uit de editor (met de laatste wijzigingen)
+        const currentFiles = JSON.parse(JSON.stringify(files.value));
+        
+        const response = await fetch(`${PUBLISH_API}/api/publish`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                projectId: currentProjectId.value,
+                version: "Experiment", // Speciale marker voor de server
+                note: "Niet-opgeslagen wijzigingen (Live Experiment)",
+                files: currentFiles 
+            })
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            publishStatus.value = 'Running';
+            showPublishModal.value = false;
+            
+            const iframe = document.querySelector('iframe');
+            if (iframe) {
+                iframe.removeAttribute('srcdoc');
+                iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
+            }
+            showToast("Experiment gestart op poort 8080", "success");
+        }
+    } catch (e) {
+        showToast("Experiment mislukt", "error");
+    } finally {
+        isLoading.value = false;
+    }
+};
 // --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
 const restoreVersion = async (backup) => {
     if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
-        // Markeer welke versie de bron is
+        // 1. Markeer herkomst
         lastRestoredVersion.value = backup.version;
         saveNote.value = `Herstart vanaf v${backup.version}`;
 
-        // Bestanden overschrijven
+        // 2. Bestanden overschrijven
         files.value = JSON.parse(JSON.stringify(backup.files));
         
-        // Versiebeheer logica (zoals eerder besproken)
+        // 3. Versiebeheer logica:
+        // We bepalen wat het volgende HOOFDnummer wordt
         const highestInHistory = history.value.length > 0 
             ? Math.max(...history.value.map(h => h.version)) 
             : backup.version;
@@ -1012,8 +1206,12 @@ const restoreVersion = async (backup) => {
         currentVersion.value = highestInHistory + 1;
         highestVersion.value = highestInHistory + 1;
 
-        // FORCEER EDITOR UPDATE
-        // We wachten tot Vue de data heeft verwerkt en herladen dan het actieve bestand in de editor
+        // --- DE FIX: Reset sub-versies van de herstelde bestanden ---
+        files.value.forEach(f => {
+            f.subVersion = 0; // Nieuwe start voor alle bestanden
+            f.activeSubVersion = null;
+        });
+
         await nextTick();
         if (activeFileName.value) {
             const currentFile = files.value.find(f => f.name === activeFileName.value);
@@ -1026,7 +1224,7 @@ const restoreVersion = async (backup) => {
         updatePreview();
         await updateProjectInDB();
         
-        showToast(`Versie ${backup.version} hersteld. Editor bijgewerkt.`, 'success');
+        showToast(`Versie ${backup.version} hersteld. Nieuwe hoofdversie: v${currentVersion.value}.0`, 'success');
         expandedProjectId.value = null;
     }
 };
@@ -1150,6 +1348,12 @@ const restoreVersion = async (backup) => {
             downloadSingleFileZip,
             isRefreshing,
             forcePreviewRefresh,
+            publishCurrentState,
+            resetProjectHistory,
+            findPrev, 
+            totalMatches,
+            currentMatchIndex,
+            updateMatchCounters,
             apiUrl
         };
     }

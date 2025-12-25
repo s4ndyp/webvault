@@ -76,6 +76,13 @@
             <button @click.stop="toggleVersions(proj._id)" class="text-gray-500 hover:text-primary transition p-1">
                 <i class="fas fa-history text-xs"></i>
             </button>
+            
+            <button @click.stop="resetProjectHistory(proj)" 
+            class="text-orange-400 opacity-0 group-hover:opacity-100 transition p-1" 
+            title="Geschiedenis wissen & archiveren">
+        <i class="fas fa-broom text-xs"></i>
+    </button>
+            
             <button @click.stop="deleteProject(proj._id)" class="text-red-400 opacity-0 group-hover:opacity-100 transition p-1">
                 <i class="fas fa-trash-alt text-xs"></i>
             </button>
@@ -83,15 +90,25 @@
     </div>
 
 <div v-if="expandedProjectId === proj._id" class="ml-8 mr-4 mt-1 mb-2 space-y-1 bg-dark/30 rounded-lg p-1 border border-gray-800">
-    <div v-for="backup in proj.history" :key="backup.version" 
-         class="group flex justify-between items-center px-3 py-2 text-[11px] text-gray-400 hover:bg-primary/10 hover:text-white rounded cursor-pointer transition">
-        <span @click.stop="restoreVersion(backup, proj._id)" class="flex-1">
+<div v-for="backup in proj.history" :key="backup.version" 
+     class="group flex flex-col px-3 py-2 text-[11px] hover:bg-primary/10 rounded cursor-pointer transition border-b border-gray-800/50">
+    
+    <div class="flex justify-between items-center w-full">
+        <span @click.stop="restoreVersion(backup, proj._id)" class="flex-1 font-bold text-gray-200">
             <i class="fas fa-reply-all mr-2 opacity-50"></i>Versie {{ backup.version }}
         </span>
         <button @click.stop="deleteProjectBackup(proj._id, backup.version)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1">
             <i class="fas fa-trash-alt text-[10px]"></i>
         </button>
     </div>
+    
+    <div v-if="backup.note" class="pl-6 text-[9px] text-gray-500 italic truncate italic">
+        {{ backup.note }}
+    </div>
+    <div class="pl-6 text-[8px] text-gray-600">
+        {{ backup.timestamp }}
+    </div>
+</div>
     
     <div v-if="!proj.history || proj.history.length === 0" class="px-3 py-2 text-[10px] text-gray-600 italic">
         Geen vorige versies
@@ -107,9 +124,9 @@
            class="w-full bg-dark/50 border border-gray-600 text-xs p-2 rounded-lg text-white focus:border-primary outline-none"
            @keyup.enter="createBackup(false)">
     
-    <button @click="createBackup(false)" class="w-full py-2 bg-primary hover:bg-indigo-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 text-xs border border-primary/20 shadow-lg">
-        <i class="fas fa-cloud-upload-alt"></i> Opslaan & Backup
-    </button>
+  <button @click="createBackup(false)" class="w-full py-2 bg-primary hover:bg-indigo-600 text-white font-bold rounded-xl transition flex items-center justify-center gap-2 text-xs border border-primary/20 shadow-lg">
+    <i class="fas fa-layer-group"></i> Genereer Nieuwe Hoofdversie
+</button>
     
     <div class="grid grid-cols-2 gap-2">
         
@@ -185,22 +202,32 @@
             </button>
         </div>
 
-        <div class="flex items-center gap-2">
-            <div class="relative">
-                <input v-model="searchQuery" @input="findNext" @keyup.enter="findNext"
-                       placeholder="Zoeken..." 
-                       class="bg-dark border border-gray-600 text-xs px-3 py-1 rounded-lg w-64 focus:w-80 transition-all outline-none focus:border-primary">
-                <span class="absolute right-2 top-1 text-[10px] text-gray-500">{{ searchMatches }}</span>
-            </div>
-            
-            <input v-model="replaceQuery" 
-                   placeholder="Vervangen door..." 
-                   class="bg-dark border border-gray-600 text-xs px-3 py-1 rounded-lg w-64 outline-none focus:border-primary">
-            
-            <button @click="replaceAll" class="text-[10px] bg-gray-700 hover:bg-primary text-white px-2 py-1 rounded transition font-bold">
-                REPLACE ALL
-            </button>
-        </div>
+<div class="flex items-center gap-2">
+    <div class="relative flex items-center">
+<input v-model="searchQuery" @keyup.enter="findNext"
+       placeholder="Zoeken (Enter voor volgende)..." 
+       class="bg-dark border border-gray-600 text-xs pl-3 pr-8 py-1 rounded-lg w-64 focus:w-80 transition-all outline-none focus:border-primary">
+        
+        <button v-if="searchQuery" @click="searchQuery = ''; searchMatches = ''" 
+                class="absolute right-2 text-gray-500 hover:text-white transition">
+            <i class="fas fa-times-circle text-[10px]"></i>
+        </button>
+    </div>
+
+    <div v-if="searchQuery.length >= 2 && totalMatches > 0" class="flex items-center gap-1 bg-dark/50 px-2 py-1 rounded-lg border border-gray-700">
+        <span class="text-[10px] text-gray-400 font-mono mr-1">{{ currentMatchIndex }}/{{ totalMatches }}</span>
+ <button @mousedown.prevent @click="findPrev" class="text-[10px] text-gray-400 hover:text-primary px-2 py-1"><i class="fas fa-chevron-up"></i></button>
+<button @mousedown.prevent @click="findNext" class="text-[10px] text-gray-400 hover:text-primary px-2 py-1"><i class="fas fa-chevron-down"></i></button>
+    </div>
+    
+    <input v-model="replaceQuery" 
+           placeholder="Vervangen..." 
+           class="bg-dark border border-gray-600 text-xs px-3 py-1 rounded-lg w-40 outline-none focus:border-primary">
+    
+    <button @click="replaceAll" class="text-[10px] bg-gray-700 hover:bg-primary text-white px-2 py-1 rounded transition font-bold">
+        REPLACE ALL
+    </button>
+</div>
        </div>           
            
                     
@@ -280,10 +307,10 @@
                 <div class="max-h-60 overflow-y-auto no-scrollbar">
                     <div v-for="h in files.find(f => f.name === tab).fileHistory" :key="h.subVersion"
                          class="group px-4 py-3 text-[11px] hover:bg-primary/20 flex justify-between items-center text-gray-200 border-b border-gray-700/50 transition-colors">
-                        <div @click.stop="restoreFileSubVersion(tab, h)" class="flex flex-col flex-1 cursor-pointer">
-                            <span class="font-bold text-white">Versie .{{ h.subVersion }}</span>
-                            <span class="text-[9px] opacity-60">{{ h.timestamp }}</span>
-                        </div>
+<div @click.stop="restoreFileSubVersion(tab, h)" class="flex flex-col flex-1 cursor-pointer">
+    <span class="font-bold text-white">Versie {{ h.majorVersion || currentVersion }}.{{ h.subVersion }}</span>
+    <span class="text-[9px] opacity-60">{{ h.timestamp }}</span>
+</div>
                     </div>
                 </div>
             </div>
@@ -381,6 +408,19 @@
         <p class="text-gray-400 text-sm mb-6 border-b border-gray-700 pb-4">Kies een versie om de server te STARTEN met die bestanden.</p>
 
         <div class="flex-1 overflow-y-auto space-y-4 no-scrollbar pr-2">
+            
+            <div class="mb-6 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-orange-400 font-bold text-xs uppercase italic">Huidige editor status</span>
+                    <span class="text-[9px] text-orange-500/70 tracking-widest px-2 py-0.5 border border-orange-500/30 rounded">UNSAVED</span>
+                </div>
+                <button @click="publishCurrentState" 
+                        class="w-full py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg">
+                    <i class="fas fa-flask"></i> START LIVE EXPERIMENT
+                </button>
+                <p class="text-[9px] text-gray-500 mt-2 text-center text-balance">Gebruik dit om je laatste wijzigingen te testen zonder direct een backup-versie aan te maken.</p>
+            </div>
+
             <div v-for="proj in projectList" :key="proj._id" class="bg-gray-800/50 rounded-xl p-4 border border-gray-700/50">
                 <div class="font-bold text-white text-sm mb-3">{{ proj.name }}</div>
                 
