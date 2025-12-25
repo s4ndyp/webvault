@@ -69,6 +69,7 @@ app.get('/api/server-status', (req, res) => {
 
 // Luister op 0.0.0.0 zodat hij ook via het lokale IP van de container/VPS bereikbaar is
 const PORT = 5000;
+// Gebruik '0.0.0.0' om verzoeken binnen de container op alle interfaces te accepteren
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Publish API draait op http://0.0.0.0:${PORT}`);
+    console.log(`[Server] API draait op http://0.0.0.0:${PORT}`);
 });
