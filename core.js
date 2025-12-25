@@ -741,14 +741,13 @@ const handleFileUpload = async (event) => {
             }
         };
 
-  const beautifyCode = () => {
+const beautifyCode = () => {
             if (!editorInstance || !activeFileName.value) return;
 
             const content = editorInstance.getValue();
             const fileName = activeFileName.value.toLowerCase();
             let beautified = content;
 
-            // Standaardinstellingen die zorgen voor die "mooie structuur"
             const options = {
                 indent_size: 4,
                 indent_char: " ",
@@ -769,18 +768,24 @@ const handleFileUpload = async (event) => {
                 indent_empty_lines: false
             };
 
-            if (fileName.endsWith('.html')) {
-                beautified = html_beautify(content, options);
-            } else if (fileName.endsWith('.css')) {
-                beautified = css_beautify(content, options);
-            } else if (fileName.endsWith('.js')) {
-                beautified = js_beautify(content, options);
-            }
+            // VOEG HIER HET TRY BLOK TOE
+            try {
+                if (fileName.endsWith('.html')) {
+                    beautified = html_beautify(content, options);
+                } else if (fileName.endsWith('.css')) {
+                    beautified = css_beautify(content, options);
+                } else if (fileName.endsWith('.js')) {
+                    beautified = js_beautify(content, options);
+                }
 
-            editorInstance.setValue(beautified);
-            showToast('Code gestructureerd!', 'success');
-        };      
-        
+                editorInstance.setValue(beautified);
+                showToast('Code gestructureerd!', 'success');
+            } catch (e) {
+                // EN HIER HET CATCH BLOK (deze vangt fouten op)
+                console.error("Beautify error:", e);
+                showToast("Kon code niet structureren", "error");
+            }
+        }; // Sluit de functie af
         
         
         
