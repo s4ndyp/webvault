@@ -6,9 +6,8 @@
 const API_URL = 'http://10.10.2.20:5000';  // Backend API URL
 const CLIENT_ID = 'sandman';                 // Unieke gebruiker ID
 const APP_NAME = 'sitebuilder';       
-const SERVER_API = 'http://10.1.2.207:5000';   
-// const PUBLISH_API = window.location.origin;
-const PUBLISH_API = 'http://10.1.2.207:8080';   
+const SERVER_API = window.location.origin; 
+const PUBLISH_API = `${window.location.protocol}//${window.location.hostname}:8080`;  
 // ============================================
 // OFFLINE MANAGER INITIALISATIE
 // ============================================
