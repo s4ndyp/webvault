@@ -1098,8 +1098,8 @@ const checkServerStatus = async () => {
                 const iframe = document.querySelector('iframe');
                 if (iframe) {
                     // We halen window.location.hostname uit een variabele om de 'undefined' error te voorkomen
-                    const currentHost = window.location.hostname || 'localhost';
-                    const liveUrl = `http://${currentHost}:8080?t=${Date.now()}`;
+        
+const liveUrl = `${PUBLISH_API}?t=${Date.now()}`;
                     
                     // Alleen de src aanpassen als die nog niet naar de live site wijst
                     if (!iframe.src.includes(':8080')) {
