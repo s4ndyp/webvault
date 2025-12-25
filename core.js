@@ -1062,37 +1062,33 @@ const closeTab = (name) => {
         
 const checkServerStatus = async () => {
     try {
-        // We voegen een uniek getal toe (?t=...) om te voorkomen dat de browser 
-        // een oud antwoord uit het geheugen serveert (cache-busting)
-        const res = await fetch(`${SERVER_API/api/server-status?t=${Date.now()}`, {
-            cache: 'no-store' // Extra instructie: niet cachen!
+        // De verbeterde fetch regel:
+        const res = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`, {
+            cache: 'no-store'
         });
 
         if (!res.ok) throw new Error('Server onbereikbaar');
 
         const data = await res.json();
         
-        // Alleen de waarde aanpassen als deze echt verschilt
         if (publishStatus.value !== data.status) {
             console.log(`[Status] Server is nu: ${data.status}`);
             publishStatus.value = data.status;
             
-            // Als de server herstart is naar Running, update de iframe
-            if (data.status === 'Running' && !document.querySelector('iframe').src.includes(':8080')) {
+            if (data.status === 'Running') {
                  const iframe = document.querySelector('iframe');
-                 if (iframe) {
+                 if (iframe && (!iframe.src || !iframe.src.includes(':8080'))) {
                     iframe.removeAttribute('srcdoc');
                     iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
                  }
             }
         }
     } catch (e) {
-        // BELANGRIJK: Bij een netwerkfout zetten we de status NIET direct op Stopped.
-        // We laten de huidige status staan, want een tijdelijke hapering 
-        // betekent niet dat de website offline is.
         console.warn('[Status Check] Kon server status niet ophalen:', e.message);
     }
 };
+
+		
 const publishProject = async (project, backup) => {
     isLoading.value = true;
     // Direct de modal sluiten zodat de gebruiker weer verder kan
