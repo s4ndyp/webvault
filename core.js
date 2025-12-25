@@ -1083,44 +1083,37 @@ const closeTab = (name) => {
         
 // NIEUWE FUNCTIE (COMPLETE REPLACEMENT):
 const checkServerStatus = async () => {
-  try {
-    console.log('[Status] Checking server status...');
-    
-    const response = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`, {
-      method: 'GET',
-      mode: 'cors',
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-store'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Server reageert niet correct (${response.status})`);
+    try {
+        // 1. Haal de data op
+        const res = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`);
+        if (!res.ok) return;
+        const data = await res.json();
+
+        // 2. Update de status (lampje) - doe dit alleen als het echt veranderd is
+        if (publishStatus.value !== data.status) {
+            console.log("[Status] UI Update naar:", data.status);
+            publishStatus.value = data.status;
+        }
+
+        // 3. Iframe beheer - BUITEN de Vue reactivity als het kan
+        if (data.status === 'Running') {
+            const iframe = document.getElementById('preview-iframe');
+            if (iframe) {
+                const host = window.location.hostname;
+                const targetSrc = `http://${host}:8080/?t=${Date.now()}`;
+                
+                // CRUCIAAL: Alleen de src aanpassen als de poort nog niet 8080 is
+                // Dit voorkomt de oneindige lus en het vastlopen
+                if (!iframe.src.includes(':8080')) {
+                    console.log("[Status] Iframe veilig overzetten naar poort 8080");
+                    iframe.removeAttribute('srcdoc');
+                    iframe.src = targetSrc;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("[Status] Check hapering...");
     }
-    
-    const data = await response.json();
-    console.log('[Status] Server antwoord:', data);
-    
-    // Update de status - dit zou het groene bolletje moeten activeren
-    publishStatus.value = data.status || 'Stopped';
-    console.log('[Status] publishStatus.value nu:', publishStatus.value);
-    
-    // Als de server Running is, zet de iframe naar de live site
-    if (data.status === 'Running') {
-      const iframe = document.querySelector('iframe');
-      if (iframe) {
-        const liveUrl = `http://${window.location.hostname}:8080`;
-        console.log('[Status] Switching iframe to live URL:', liveUrl);
-        iframe.removeAttribute('srcdoc');
-        iframe.src = liveUrl + `?t=${Date.now()}`;
-      }
-    }
-    
-  } catch (err) {
-    console.error('[Status] Check mislukt:', err.message);
-    // We zetten NIET automatisch op Stopped - hou de laatste status
-  }
 };
 
 
