@@ -646,14 +646,21 @@ const resetProjectHistory = async (proj) => {
 const forcePreviewRefresh = () => {
     isRefreshing.value = true;
     
-    // Wis tijdelijke preview data in de Vue state
-    previewContent.value = ''; 
+    // 1. Haal de allernieuwste code direct uit de editor (net als bij typen)
+    if (editorInstance && activeFileName.value) {
+        const currentContent = editorInstance.getValue();
+        const fileToUpdate = files.value.find(f => f.name === activeFileName.value);
+        if (fileToUpdate) {
+            fileToUpdate.content = currentContent;
+            fileToUpdate.lastModified = Date.now();
+        }
+    }
 
-    // Geef de browser 50ms de tijd om het geheugen vrij te geven
+    // 2. Geef de browser even de tijd en dwing dan een update af
     setTimeout(() => {
         updatePreview();
         isRefreshing.value = false;
-        showToast('Geheugen gewist & Preview herstart', 'info');
+        showToast('Preview volledig gesynchroniseerd', 'success');
     }, 50);
 };
         // --- UPLOAD LOGICA ---
@@ -1036,6 +1043,9 @@ const checkServerStatus = async () => {
 };
 const publishProject = async (project, backup) => {
     isLoading.value = true;
+    // Direct de modal sluiten zodat de gebruiker weer verder kan
+    showPublishModal.value = false; 
+
     try {
         const response = await fetch(`${PUBLISH_API}/api/publish`, {
             method: 'POST',
@@ -1046,25 +1056,26 @@ const publishProject = async (project, backup) => {
                 files: backup.files 
             })
         });
+
+        if (!response.ok) throw new Error('Publicatie server fout');
+        
         const result = await response.json();
         
         if (result.success) {
             publishStatus.value = 'Running';
-            showPublishModal.value = false;
             
-            // DE FIX: Pak de iframe en verander de SRC naar de live URL
             const iframe = document.querySelector('iframe');
             if (iframe) {
-                // Verwijder srcdoc (die heeft voorrang op src)
                 iframe.removeAttribute('srcdoc');
-                // Zet de URL naar de poort van de gepubliceerde site
-                iframe.src = `http://${window.location.hostname}:8080?v=${backup.version}`;
+                iframe.src = `http://${window.location.hostname}:8080?v=${backup.version}&t=${Date.now()}`;
             }
-            
             showToast(result.message, 'success');
         }
     } catch (e) {
-        showToast("Publicatie mislukt", "error");
+        console.error("Publish fout:", e);
+        showToast("Publicatie mislukt: " + e.message, "error");
+        // Bij fout de status checken om te zien wat de server doet
+        await checkServerStatus();
     } finally {
         isLoading.value = false;
     }

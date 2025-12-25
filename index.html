@@ -450,7 +450,8 @@
         </div>
 
         <div class="mt-6 flex justify-end gap-3">
-            <button @click="showPublishModal = false" class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm transition">
+<button @click="showPublishModal = false; isLoading = false" 
+                    class="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm transition font-bold">
                 Annuleren
             </button>
         </div>
