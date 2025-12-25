@@ -144,19 +144,27 @@
             <i class="fas fa-download"></i> ZIP
         </button>
     </div>
-         <div class="p-4 border-t border-gray-700 mt-4 bg-dark/20">
+<div class="p-4 border-t border-gray-700 mt-4 bg-dark/20">
     <div class="text-[10px] font-bold text-gray-500 uppercase mb-2 tracking-widest">Server Status</div>
-    <div class="flex items-center justify-between mb-4">
+    
+    <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
             <span :class="publishStatus === 'Running' ? 'bg-green-500 animate-pulse' : 'bg-red-500'" class="w-2 h-2 rounded-full"></span>
             <span class="text-xs font-bold">{{ publishStatus }}</span>
         </div>
         <button v-if="publishStatus === 'Running'" @click="stopServer" class="text-[10px] text-red-400 hover:text-red-300 underline">Stop Server</button>
     </div>
+
+    <a v-if="publishStatus === 'Running'" 
+       :href="'http://' + window.location.hostname + ':8080'" 
+       target="_blank"
+       class="w-full py-1.5 mb-2 bg-green-600/20 hover:bg-green-600/40 text-green-400 border border-green-600/50 rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-2">
+        <i class="fas fa-external-link-alt"></i> OPEN LIVE SITE (:8080)
+    </a>
+
     <button @click="showPublishModal = true" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg">
         <i class="fas fa-rocket"></i> Publish Website
     </button>
-</div>       
 </div>
         </aside>
 

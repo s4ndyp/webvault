@@ -329,22 +329,31 @@ const saveSingleFile = async (fileName) => {
 const restoreFileSubVersion = (fileName, historyItem) => {
     const file = files.value.find(f => f.name === fileName);
     if (file) {
+        // 1. De inhoud herstellen
         file.content = historyItem.content;
         file.savedContent = historyItem.content; 
         
-        // Track welke sub-versie nu 'actief' is in de editor
-        file.activeSubVersion = historyItem.subVersion;
-
-        const highestSub = file.fileHistory && file.fileHistory.length > 0 
-            ? Math.max(...file.fileHistory.map(h => h.subVersion)) 
-            : historyItem.subVersion;
-
-        file.subVersion = highestSub + 1;
+        // 2. Bepaal het nieuwe subnummer binnen de HUIDIGE hoofdversie
+        // We filteren de historie op versies die hetzelfde hoofdnummer hebben als nu
+        const matchesInCurrentRange = file.fileHistory ? file.fileHistory.filter(h => h.majorVersion === currentVersion.value) : [];
         
-        // Directe update van de editor
+        let nextSub;
+        if (matchesInCurrentRange.length > 0) {
+            // Hoogste subnummer in de huidige reeks + 1
+            const maxSub = Math.max(...matchesInCurrentRange.map(h => h.subVersion));
+            nextSub = maxSub + 1;
+        } else {
+            // Eerste wijziging in deze nieuwe hoofdversie reeks
+            nextSub = 1;
+        }
+
+        file.subVersion = nextSub;
+        file.activeSubVersion = historyItem.subVersion; // Voor de blauwe badge in de tab
+
+        // 3. Editor updaten
         if (activeFileName.value === fileName && editorInstance) {
             editorInstance.setValue(file.content);
-            showToast(`${fileName} hersteld naar .${historyItem.subVersion}`, 'info');
+            showToast(`${fileName} hersteld (wordt v${currentVersion.value}.${nextSub} bij opslaan)`, 'info');
         }
         
         updatePreview();
@@ -1190,25 +1199,30 @@ const setActiveFile = (name) => {
 // --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
 const restoreVersion = async (backup) => {
     if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
-        // 1. Markeer herkomst
+        // 1. Markeer herkomst voor de UI
         lastRestoredVersion.value = backup.version;
         saveNote.value = `Herstart vanaf v${backup.version}`;
 
         // 2. Bestanden overschrijven
         files.value = JSON.parse(JSON.stringify(backup.files));
         
-        // 3. Versiebeheer logica:
-        // We bepalen wat het volgende HOOFDnummer wordt
-        const highestInHistory = history.value.length > 0 
-            ? Math.max(...history.value.map(h => h.version)) 
-            : backup.version;
+        // 3. WATERDICHTE VERSIELOGICA:
+        // We kijken naar: 
+        // - Alle versienummers in de geschiedenis
+        // - Én het nummer van de versie waar we net in werkten (currentVersion)
+        // - Én het nummer van de backup die we nu herstellen
+        const versionsInHistory = history.value.map(h => h.version);
+        const maxVersionEver = Math.max(0, ...versionsInHistory, currentVersion.value, backup.version);
         
-        currentVersion.value = highestInHistory + 1;
-        highestVersion.value = highestInHistory + 1;
+        // De nieuwe reeks krijgt ALTIJD het hoogste nummer ooit + 1
+        const nextMainVersion = maxVersionEver + 1;
+        
+        currentVersion.value = nextMainVersion;
+        highestVersion.value = nextMainVersion;
 
-        // --- DE FIX: Reset sub-versies van de herstelde bestanden ---
+        // 4. RESET sub-versies: De bestanden beginnen in de nieuwe reeks weer bij .0
         files.value.forEach(f => {
-            f.subVersion = 0; // Nieuwe start voor alle bestanden
+            f.subVersion = 0; 
             f.activeSubVersion = null;
         });
 
@@ -1224,7 +1238,7 @@ const restoreVersion = async (backup) => {
         updatePreview();
         await updateProjectInDB();
         
-        showToast(`Versie ${backup.version} hersteld. Nieuwe hoofdversie: v${currentVersion.value}.0`, 'success');
+        showToast(`Versie ${backup.version} hersteld als basis voor v${nextMainVersion}.0`, 'success');
         expandedProjectId.value = null;
     }
 };
