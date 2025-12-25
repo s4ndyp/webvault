@@ -5,9 +5,11 @@
 // ============================================
 const API_URL = 'http://10.10.2.20:5000';  // Backend API URL
 const CLIENT_ID = 'sandman';                 // Unieke gebruiker ID
-const APP_NAME = 'sitebuilder';              // App naam voor collectie-prefix
-const PUBLISH_API = window.location.origin;
-
+const APP_NAME = 'sitebuilder';       
+const SERVER_API = window.location.origin.includes('null') 
+    ? `${window.location.protocol}//${window.location.hostname}` 
+    : window.location.origin;
+const PUBLISH_API = `${window.location.protocol}//${window.location.hostname}:8080`;  
 // ============================================
 // OFFLINE MANAGER INITIALISATIE
 // ============================================
@@ -36,15 +38,23 @@ async function initManager() {
         });
         
         // De bestaande setInterval voor auto-sync
-        setInterval(async () => {
-            if (navigator.onLine && manager && typeof publishStatus !== 'undefined' && publishStatus.value !== 'Stopping...') {
-                console.log('[Manager] Automatische cache refresh...');
-                await manager.refreshCache('projects');
-                if (publishStatus.value !== 'Stopped') {
-                    await checkServerStatus();
-                }
-            }
-        }, 60000);
+setInterval(async () => {
+  if (navigator.onLine && manager) {
+    try {
+      console.log('[Manager] Automatische cache refresh...');
+      await manager.refreshCache('projects');
+      
+      // Only check server status if we're interested in it
+      if (publishStatus.value !== 'Stopped' && publishStatus.value !== 'Stopping...') {
+        await checkServerStatus();
+      }
+    } catch (err) {
+      console.error('[Manager] Auto-sync fout:', err);
+      // Niet fataal - ga door met volgende poging
+    }
+  }
+}, 60000);
+
     }
 }
 // ============================================
@@ -90,6 +100,7 @@ createApp({
 		const searchMatches = ref('');
         const showPublishModal = ref(false);
 		const publishStatus = ref('Stopped'); // 'Stopped' of 'Running'
+		const hostname = window.location.hostname; // Maak de hostname beschikbaar voor de HTML
 		const selectedPublishVersion = ref(null);
         const isRefreshing = ref(false);
         const totalMatches = ref(0);
@@ -102,6 +113,10 @@ createApp({
         const clientId = ref(CLIENT_ID);
         const apiUrl = ref(API_URL);
 
+		window.appStatus = publishStatus;
+
+
+		
         const REQUIRED_FILES = [
             'index.html', 'styles.css', 'tailwind.js', 'core.js', 'render.js'
         ];
@@ -143,14 +158,24 @@ onMounted(async () => {
             
             editorContainer.value.innerHTML = '';
             
-            editorInstance = CodeMirror(editorContainer.value, {
+editorInstance = CodeMirror(editorContainer.value, {
                 value: activeFile.value ? activeFile.value.content : '',
                 mode: 'htmlmixed',
                 theme: 'material-darker',
                 lineNumbers: true,
                 lineWrapping: true,
                 indentUnit: 4,
-                tabSize: 4
+                tabSize: 4,
+                gutters: ["CodeMirror-lint-markers"],
+                // VERVANG lint: true DOOR DIT:
+                lint: {
+                    options: {
+                        esversion: 11, // Hiermee herkent hij const, let en =>
+                        asi: true,    // Optioneel: dit negeert waarschuwingen over ontbrekende puntkomma's
+                        browser: true,
+                        devel: true
+                    }
+                }
             });
 
             if (editorInstance) {
@@ -329,22 +354,31 @@ const saveSingleFile = async (fileName) => {
 const restoreFileSubVersion = (fileName, historyItem) => {
     const file = files.value.find(f => f.name === fileName);
     if (file) {
+        // 1. De inhoud herstellen
         file.content = historyItem.content;
         file.savedContent = historyItem.content; 
         
-        // Track welke sub-versie nu 'actief' is in de editor
-        file.activeSubVersion = historyItem.subVersion;
-
-        const highestSub = file.fileHistory && file.fileHistory.length > 0 
-            ? Math.max(...file.fileHistory.map(h => h.subVersion)) 
-            : historyItem.subVersion;
-
-        file.subVersion = highestSub + 1;
+        // 2. Bepaal het nieuwe subnummer binnen de HUIDIGE hoofdversie
+        // We filteren de historie op versies die hetzelfde hoofdnummer hebben als nu
+        const matchesInCurrentRange = file.fileHistory ? file.fileHistory.filter(h => h.majorVersion === currentVersion.value) : [];
         
-        // Directe update van de editor
+        let nextSub;
+        if (matchesInCurrentRange.length > 0) {
+            // Hoogste subnummer in de huidige reeks + 1
+            const maxSub = Math.max(...matchesInCurrentRange.map(h => h.subVersion));
+            nextSub = maxSub + 1;
+        } else {
+            // Eerste wijziging in deze nieuwe hoofdversie reeks
+            nextSub = 1;
+        }
+
+        file.subVersion = nextSub;
+        file.activeSubVersion = historyItem.subVersion; // Voor de blauwe badge in de tab
+
+        // 3. Editor updaten
         if (activeFileName.value === fileName && editorInstance) {
             editorInstance.setValue(file.content);
-            showToast(`${fileName} hersteld naar .${historyItem.subVersion}`, 'info');
+            showToast(`${fileName} hersteld (wordt v${currentVersion.value}.${nextSub} bij opslaan)`, 'info');
         }
         
         updatePreview();
@@ -637,14 +671,21 @@ const resetProjectHistory = async (proj) => {
 const forcePreviewRefresh = () => {
     isRefreshing.value = true;
     
-    // Wis tijdelijke preview data in de Vue state
-    previewContent.value = ''; 
+    // 1. Haal de allernieuwste code direct uit de editor (net als bij typen)
+    if (editorInstance && activeFileName.value) {
+        const currentContent = editorInstance.getValue();
+        const fileToUpdate = files.value.find(f => f.name === activeFileName.value);
+        if (fileToUpdate) {
+            fileToUpdate.content = currentContent;
+            fileToUpdate.lastModified = Date.now();
+        }
+    }
 
-    // Geef de browser 50ms de tijd om het geheugen vrij te geven
+    // 2. Geef de browser even de tijd en dwing dan een update af
     setTimeout(() => {
         updatePreview();
         isRefreshing.value = false;
-        showToast('Geheugen gewist & Preview herstart', 'info');
+        showToast('Preview volledig gesynchroniseerd', 'success');
     }, 50);
 };
         // --- UPLOAD LOGICA ---
@@ -722,6 +763,55 @@ const handleFileUpload = async (event) => {
             }
         };
 
+const beautifyCode = () => {
+            if (!editorInstance || !activeFileName.value) return;
+
+            const content = editorInstance.getValue();
+            const fileName = activeFileName.value.toLowerCase();
+            let beautified = content;
+
+            const options = {
+                indent_size: 4,
+                indent_char: " ",
+                max_preserve_newlines: 2,
+                preserve_newlines: true,
+                keep_array_indentation: false,
+                break_chained_methods: false,
+                indent_scripts: "normal",
+                brace_style: "collapse,preserve-inline",
+                space_before_conditional: true,
+                unescape_strings: false,
+                jslint_happy: false,
+                end_with_newline: true,
+                wrap_line_length: 0,
+                indent_inner_html: true,
+                comma_first: false,
+                e4x: false,
+                indent_empty_lines: false
+            };
+
+            // VOEG HIER HET TRY BLOK TOE
+            try {
+                if (fileName.endsWith('.html')) {
+                    beautified = html_beautify(content, options);
+                } else if (fileName.endsWith('.css')) {
+                    beautified = css_beautify(content, options);
+                } else if (fileName.endsWith('.js')) {
+                    beautified = js_beautify(content, options);
+                }
+
+                editorInstance.setValue(beautified);
+                showToast('Code gestructureerd!', 'success');
+            } catch (e) {
+                // EN HIER HET CATCH BLOK (deze vangt fouten op)
+                console.error("Beautify error:", e);
+                showToast("Kon code niet structureren", "error");
+            }
+        }; // Sluit de functie af
+        
+        
+        
+        
 // --- GEWIJZIGDE FUNCTIE: openProject ---
 const openProject = async (projectId, projectName) => {
     if (!manager) return;
@@ -992,43 +1082,50 @@ const closeTab = (name) => {
 };       
         
         
+// NIEUWE FUNCTIE (COMPLETE REPLACEMENT):
 const checkServerStatus = async () => {
     try {
-        // We voegen een uniek getal toe (?t=...) om te voorkomen dat de browser 
-        // een oud antwoord uit het geheugen serveert (cache-busting)
-        const res = await fetch(`${PUBLISH_API}/api/server-status?t=${Date.now()}`, {
-            cache: 'no-store' // Extra instructie: niet cachen!
-        });
-
-        if (!res.ok) throw new Error('Server onbereikbaar');
-
+        // 1. Haal de data op
+        const res = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`);
+        if (!res.ok) return;
         const data = await res.json();
-        
-        // Alleen de waarde aanpassen als deze echt verschilt
+
+        // 2. Update de status (lampje) - doe dit alleen als het echt veranderd is
         if (publishStatus.value !== data.status) {
-            console.log(`[Status] Server is nu: ${data.status}`);
+            console.log("[Status] UI Update naar:", data.status);
             publishStatus.value = data.status;
-            
-            // Als de server herstart is naar Running, update de iframe
-            if (data.status === 'Running' && !document.querySelector('iframe').src.includes(':8080')) {
-                 const iframe = document.querySelector('iframe');
-                 if (iframe) {
+        }
+
+        // 3. Iframe beheer - BUITEN de Vue reactivity als het kan
+        if (data.status === 'Running') {
+            const iframe = document.getElementById('preview-iframe');
+            if (iframe) {
+                const host = window.location.hostname;
+                const targetSrc = `http://${host}:8080/?t=${Date.now()}`;
+                
+                // CRUCIAAL: Alleen de src aanpassen als de poort nog niet 8080 is
+                // Dit voorkomt de oneindige lus en het vastlopen
+                if (!iframe.src.includes(':8080')) {
+                    console.log("[Status] Iframe veilig overzetten naar poort 8080");
                     iframe.removeAttribute('srcdoc');
-                    iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
-                 }
+                    iframe.src = targetSrc;
+                }
             }
         }
     } catch (e) {
-        // BELANGRIJK: Bij een netwerkfout zetten we de status NIET direct op Stopped.
-        // We laten de huidige status staan, want een tijdelijke hapering 
-        // betekent niet dat de website offline is.
-        console.warn('[Status Check] Kon server status niet ophalen:', e.message);
+        console.warn("[Status] Check hapering...");
     }
 };
+
+
+		
 const publishProject = async (project, backup) => {
     isLoading.value = true;
+    // Direct de modal sluiten zodat de gebruiker weer verder kan
+    showPublishModal.value = false; 
+
     try {
-        const response = await fetch(`${PUBLISH_API}/api/publish`, {
+        const response = await fetch(`${SERVER_API}/api/publish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1037,25 +1134,26 @@ const publishProject = async (project, backup) => {
                 files: backup.files 
             })
         });
+
+        if (!response.ok) throw new Error('Publicatie server fout');
+        
         const result = await response.json();
         
         if (result.success) {
             publishStatus.value = 'Running';
-            showPublishModal.value = false;
             
-            // DE FIX: Pak de iframe en verander de SRC naar de live URL
             const iframe = document.querySelector('iframe');
             if (iframe) {
-                // Verwijder srcdoc (die heeft voorrang op src)
                 iframe.removeAttribute('srcdoc');
-                // Zet de URL naar de poort van de gepubliceerde site
-                iframe.src = `http://${window.location.hostname}:8080?v=${backup.version}`;
+                iframe.src = `http://${window.location.hostname}:8080?v=${backup.version}&t=${Date.now()}`;
             }
-            
             showToast(result.message, 'success');
         }
     } catch (e) {
-        showToast("Publicatie mislukt", "error");
+        console.error("Publish fout:", e);
+        showToast("Publicatie mislukt: " + e.message, "error");
+        // Bij fout de status checken om te zien wat de server doet
+        await checkServerStatus();
     } finally {
         isLoading.value = false;
     }
@@ -1066,7 +1164,7 @@ const stopServer = async () => {
         // Direct visueel op 'Stopping' zetten
         publishStatus.value = 'Stopping...';
         
-       const response = await fetch(`${PUBLISH_API}/api/stop-server`, {
+       const response = await fetch(`${SERVER_API}/api/stop-server`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
@@ -1190,25 +1288,30 @@ const setActiveFile = (name) => {
 // --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
 const restoreVersion = async (backup) => {
     if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
-        // 1. Markeer herkomst
+        // 1. Markeer herkomst voor de UI
         lastRestoredVersion.value = backup.version;
         saveNote.value = `Herstart vanaf v${backup.version}`;
 
         // 2. Bestanden overschrijven
         files.value = JSON.parse(JSON.stringify(backup.files));
         
-        // 3. Versiebeheer logica:
-        // We bepalen wat het volgende HOOFDnummer wordt
-        const highestInHistory = history.value.length > 0 
-            ? Math.max(...history.value.map(h => h.version)) 
-            : backup.version;
+        // 3. WATERDICHTE VERSIELOGICA:
+        // We kijken naar: 
+        // - Alle versienummers in de geschiedenis
+        // - Én het nummer van de versie waar we net in werkten (currentVersion)
+        // - Én het nummer van de backup die we nu herstellen
+        const versionsInHistory = history.value.map(h => h.version);
+        const maxVersionEver = Math.max(0, ...versionsInHistory, currentVersion.value, backup.version);
         
-        currentVersion.value = highestInHistory + 1;
-        highestVersion.value = highestInHistory + 1;
+        // De nieuwe reeks krijgt ALTIJD het hoogste nummer ooit + 1
+        const nextMainVersion = maxVersionEver + 1;
+        
+        currentVersion.value = nextMainVersion;
+        highestVersion.value = nextMainVersion;
 
-        // --- DE FIX: Reset sub-versies van de herstelde bestanden ---
+        // 4. RESET sub-versies: De bestanden beginnen in de nieuwe reeks weer bij .0
         files.value.forEach(f => {
-            f.subVersion = 0; // Nieuwe start voor alle bestanden
+            f.subVersion = 0; 
             f.activeSubVersion = null;
         });
 
@@ -1224,7 +1327,7 @@ const restoreVersion = async (backup) => {
         updatePreview();
         await updateProjectInDB();
         
-        showToast(`Versie ${backup.version} hersteld. Nieuwe hoofdversie: v${currentVersion.value}.0`, 'success');
+        showToast(`Versie ${backup.version} hersteld als basis voor v${nextMainVersion}.0`, 'success');
         expandedProjectId.value = null;
     }
 };
@@ -1354,6 +1457,8 @@ const restoreVersion = async (backup) => {
             totalMatches,
             currentMatchIndex,
             updateMatchCounters,
+            beautifyCode,
+			hostname,
             apiUrl
         };
     }

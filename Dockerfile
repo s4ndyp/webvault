@@ -1,43 +1,29 @@
-# Gebruik NGINX als basis
-FROM nginx:alpine
+# Gebruik Python als basis
+FROM python:3.11-slim
 
-# Installeer Node.js en NPM
-RUN apk add --no-cache nodejs npm
-
-# Maak de mappen aan
-# RUN mkdir -p /var/www/published
-RUN mkdir -p /usr/src/app
-# ... na het aanmaken van de mappen ...
-RUN mkdir -p /var/www/published && chown -R nginx:nginx /var/www/published
-# Kopieer de Editor bestanden (HTML, JS, CSS) naar de NGINX map
-COPY ./index.html /usr/share/nginx/html/
-COPY ./core.js /usr/share/nginx/html/
-COPY ./render.js /usr/share/nginx/html/
-COPY ./styles.css /usr/share/nginx/html/
-COPY ./offline_managerv2.js /usr/share/nginx/html/
-COPY ./tailwind.js /usr/share/nginx/html/
-
-# Kopieer de API server bestanden
-COPY ./server.js /usr/src/app/
-COPY ./package.json /usr/src/app/
-
-# Installeer Node dependencies
+# Werkmap aanmaken
 WORKDIR /usr/src/app
-RUN npm install
 
-# Kopieer de NGINX configuratie
-COPY ./nginx.conf /etc/nginx/nginx.conf
+# Installeer Flask en CORS
+RUN pip install flask flask-cors
 
-# Zorg dat het start-script ook rechten herstelt bij elke boot
-RUN echo "#!/bin/sh" > /start.sh && \
-    echo "chown -R nginx:nginx /var/www/published" >> /start.sh && \
-    echo "node /usr/src/app/server.js &" >> /start.sh && \
-    echo "nginx -g 'daemon off;'" >> /start.sh && \
-    chmod +x /start.sh
+# Mappen aanmaken voor de editor en de output
+RUN mkdir -p /usr/src/app/builder
+RUN mkdir -p /var/www/published
 
-# Open de poorten: 80 (Builder), 8080 (Live Site), 5000 (API)
-EXPOSE 80 8080 5000
-# Voeg dit toe onderaan je Dockerfile, net voor de CMD ["/start.sh"]
-RUN chown -R nginx:nginx /var/www/published && chmod -R 755 /var/www/published
+# Kopieer de Editor bestanden naar de builder map
+COPY ./index.html ./builder/
+COPY ./core.js ./builder/
+COPY ./render.js ./builder/
+COPY ./styles.css ./builder/
+COPY ./offline_managerv2.js ./builder/
+COPY ./tailwind.js ./builder/
 
-CMD ["/start.sh"]
+# Kopieer het Python script
+COPY ./main.py .
+
+# Open de poorten
+EXPOSE 80 8080
+
+# Start de Python server
+CMD ["python", "main.py"]
