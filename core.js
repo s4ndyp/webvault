@@ -489,15 +489,7 @@ watch(searchQuery, (newQuery) => {
         updateMatchCounters();
     }, 20);
 });
-    editorInstance.addOverlay(editorInstance.state.searchOverlay);
 
-    // 4. Update de tellers en spring direct naar het eerste resultaat
-    // We gebruiken een kleine timeout zodat CodeMirror de tijd heeft om de overlay te verwerken
-    setTimeout(() => {
-        updateMatchCounters();
-        findNext(); 
-    }, 10);
-});
         
         
         // --- VERSIE INSERTIE ---
