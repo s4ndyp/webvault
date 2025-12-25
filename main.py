@@ -1,6 +1,7 @@
 import os
 import shutil
 import threading
+import traceback
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
@@ -10,7 +11,7 @@ PUBLIC_PORT = 8080
 PUBLISH_DIR = '/var/www/published'
 BUILDER_DIR = '/usr/src/app/builder'
 
-# Zorg dat de mappen bestaan
+# Zorg dat de mappen bestaan bij opstarten
 os.makedirs(PUBLISH_DIR, exist_ok=True)
 os.makedirs(BUILDER_DIR, exist_ok=True)
 
@@ -29,47 +30,81 @@ def publish():
     global server_status
     try:
         data = request.json
+        if not data:
+            return jsonify({"success": False, "error": "Geen data ontvangen"}), 400
+            
         files = data.get('files', [])
+        print(f"[*] Ontvangen: {len(files)} bestanden voor publicatie.")
         
-        # Maak map leeg voor schone installatie
+        # STAP 1: Maak de map leeg zonder de hoofdmap zelf te verwijderen
+        # Dit is veel veiliger voor Docker-mounts en voorkomt 500 errors
         if os.path.exists(PUBLISH_DIR):
-            shutil.rmtree(PUBLISH_DIR)
-        os.makedirs(PUBLISH_DIR)
+            for filename in os.listdir(PUBLISH_DIR):
+                file_path = os.path.join(PUBLISH_DIR, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                except Exception as e:
+                    print(f"  [!] Waarschuwing: Kon {filename} niet verwijderen: {e}")
+        else:
+            os.makedirs(PUBLISH_DIR, exist_ok=True)
         
+        # STAP 2: Schrijf de nieuwe bestanden
         for file in files:
-            # Veilig pad maken (voorkom dat bestanden buiten de map schrijven)
-            filename = file['name'].lstrip('/')
-            file_path = os.path.join(PUBLISH_DIR, filename)
+            name = file.get('name', '').lstrip('/')
+            if not name:
+                continue
+                
+            content = file.get('content', '')
+            file_path = os.path.join(PUBLISH_DIR, name)
+            
+            # Maak submappen aan (bijv. voor css/style.css)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(file['content'])
+                f.write(content)
+            
+            # Zet rechten op 644 zodat de webserver ze kan lezen
+            os.chmod(file_path, 0o644)
         
         server_status = "Running"
+        print("[*] Publicatie succesvol voltooid.")
         return jsonify({"success": True, "message": "Gepubliceerd!"})
+        
     except Exception as e:
+        print("[!] CRASH in /api/publish:")
+        traceback.print_exc() # Dit print de exacte regelcode van de fout in Docker logs
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app_admin.route('/api/stop-server', methods=['POST'])
 def stop_server():
     global server_status
     try:
-        if os.path.exists(PUBLISH_DIR):
-            shutil.rmtree(PUBLISH_DIR)
-        os.makedirs(PUBLISH_DIR)
+        # Alleen de inhoud wissen
+        for filename in os.listdir(PUBLISH_DIR):
+            file_path = os.path.join(PUBLISH_DIR, filename)
+            if os.path.isfile(file_path): os.unlink(file_path)
+            elif os.path.isdir(file_path): shutil.rmtree(file_path)
+            
         server_status = "Stopped"
         return jsonify({"success": True})
     except Exception as e:
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 # --- BUILDER SERVING (PORT 80) ---
-# Deze route zorgt dat de hoofdmap de index.html pakt
+
 @app_admin.route('/')
 def serve_builder_index():
     return send_from_directory(BUILDER_DIR, 'index.html')
 
-# Deze route zorgt dat ALLE bestanden (ook in submappen) gevonden worden
 @app_admin.route('/<path:filename>')
 def serve_builder_files(filename):
+    # Als het pad een API aanroep is, laat Flask de API routes gebruiken
+    if filename.startswith('api/'):
+        return None 
     return send_from_directory(BUILDER_DIR, filename)
 
 # --- PUBLIC SERVER (PORT 8080) ---
@@ -83,17 +118,21 @@ def serve_public_index():
 def serve_public_files(filename):
     return send_from_directory(PUBLISH_DIR, filename)
 
-# --- STARTUP ---
+# --- STARTUP LOGICA ---
+
 def run_admin():
-    # threaded=True is belangrijk om meerdere verzoeken tegelijk aan te kunnen
+    print(f"[*] Admin UI & API draait op poort {ADMIN_PORT}")
     app_admin.run(host='0.0.0.0', port=ADMIN_PORT, threaded=True)
 
 def run_public():
+    print(f"[*] Publieke site draait op poort {PUBLIC_PORT}")
     app_public.run(host='0.0.0.0', port=PUBLIC_PORT, threaded=True)
 
 if __name__ == '__main__':
-    print(f"[*] Builder UI & API op poort {ADMIN_PORT}")
-    threading.Thread(target=run_admin, daemon=True).start()
+    # Start de Admin server in een aparte thread
+    t = threading.Thread(target=run_admin)
+    t.daemon = True
+    t.start()
     
-    print(f"[*] Publieke site op poort {PUBLIC_PORT}")
-    run_public() # De laatste draait in de main thread
+    # Start de Public server in de hoofd-thread
+    run_public()
