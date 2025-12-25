@@ -16,8 +16,18 @@ let manager = null;
 async function initManager() {
     if (!manager) {
         manager = new OfflineManager(API_URL, CLIENT_ID, APP_NAME);
-        console.log(`[Manager] Geïnitialiseerd: ${APP_NAME} @ ${API_URL} (Client: ${CLIENT_ID})`);
+        console.log(`[Manager] Geïnitialiseerd: ${APP_NAME}`);
         
+        // --- DE TOEVOEGING: Forceer ophalen bij start ---
+        try {
+            console.log('[Manager] Initiële data ophalen uit cloud...');
+            // We refreshen de 'projects' collectie direct bij het opstarten
+            await manager.refreshCache('projects'); 
+            console.log('[Manager] Cloud data succesvol gesynchroniseerd.');
+        } catch (e) {
+            console.warn('[Manager] Kon initiële data niet ophalen (offline?), we werken verder met lokale cache.');
+        }
+
         // Sync outbox wanneer verbinding hersteld
         window.addEventListener('online', async () => {
             console.log('[Manager] Verbinding hersteld, syncing...');
@@ -25,22 +35,17 @@ async function initManager() {
             await refreshProjectList();
         });
         
-        // Auto-refresh elke 60 seconden (actieve sync)
-// --- PAS DE setInterval AAN IN initManager ---
-setInterval(async () => {
-    // Voeg een extra check toe: alleen refreshen als we niet net handmatig gestopt zijn
-    // en als de pagina nog steeds zichtbaar is (bespaart ook resources)
-    if (navigator.onLine && manager && publishStatus.value !== 'Stopping...') {
-        console.log('[Manager] Automatische cache refresh...');
-        await manager.refreshCache('projects');
-        
-        // Roep alleen de status check aan als de server NIET handmatig gestopt is
-        if (publishStatus.value !== 'Stopped') {
-            await checkServerStatus();
-        }
+        // De bestaande setInterval voor auto-sync
+        setInterval(async () => {
+            if (navigator.onLine && manager && typeof publishStatus !== 'undefined' && publishStatus.value !== 'Stopping...') {
+                console.log('[Manager] Automatische cache refresh...');
+                await manager.refreshCache('projects');
+                if (publishStatus.value !== 'Stopped') {
+                    await checkServerStatus();
+                }
+            }
+        }, 60000);
     }
-}, 60000); // 60 seconden
- }
 }
 // ============================================
 // VUE APP
@@ -102,31 +107,35 @@ createApp({
         ];
 
  // --- INIT ---
-        onMounted(async () => {
-            try {
-                // 1. Start de manager en haal projecten op
-                await initManager();
-                await refreshProjectList();
-            } catch (e) {
-                console.error('[Init Error]', e);
-                showToast('Fout bij starten manager', 'error');
-            }
-            
-            // 2. Start de hoofd-timer (elke minuut)
-            timerInterval = setInterval(async () => {
-                currentTime.value = Date.now();
-                
-                // Optioneel: Check elke minuut ook de server status automatisch
-                if (navigator.onLine) {
-                    await checkServerStatus();
-                }
-            }, 60000);
+// --- INIT ---
+onMounted(async () => {
+    try {
+        isLoading.value = true; // Toon een spinner tijdens het laden
+        
+        // 1. Start de manager (deze wacht nu op de cloud data)
+        await initManager();
+        
+        // 2. Pas als de manager klaar is, vullen we de projectList in de UI
+        await refreshProjectList();
+        
+        console.log(`[App] Klaar! ${projectList.value.length} projecten geladen.`);
+    } catch (e) {
+        console.error('[Init Error]', e);
+        showToast('Fout bij starten manager', 'error');
+    } finally {
+        isLoading.value = false;
+    }
+    
+    // Start de timers voor status checks
+    timerInterval = setInterval(async () => {
+        currentTime.value = Date.now();
+        if (navigator.onLine) {
+            await checkServerStatus();
+        }
+    }, 60000);
 
-            // 3. Voer de eerste check direct uit bij het opstarten
-            await checkServerStatus(); 
-            
-            console.log('[App] Initialisatie voltooid. Server status:', publishStatus.value);
-        });
+    await checkServerStatus(); 
+});
 
 // --- CODEMIRROR EDITOR SETUP ---
         const initEditor = () => {
@@ -385,23 +394,29 @@ const restoreFileSubVersion = (fileName, historyItem) => {
 const findNext = () => {
     if (!editorInstance || !searchQuery.value) return;
     
-    // Zorg dat de editor focus heeft zodat de selectie zichtbaar is
+    // Forceer focus naar de editor
     editorInstance.focus();
     
-    const cursor = editorInstance.getSearchCursor(searchQuery.value);
-    const startFrom = editorInstance.getCursor("to");
+    // Pak de huidige cursorpositie van de SELECTIE (het einde daarvan)
+    const currentCursor = editorInstance.getCursor("to");
+    const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor);
     
-    if (!cursor.findNext(startFrom)) {
-        // Wrap around naar begin
-        cursor.findNext();
-    }
-    
-    if (cursor.from()) {
+    if (!cursor.findNext()) {
+        // Als we onderaan zijn, begin bovenaan opnieuw
+        const startCursor = {line: 0, ch: 0};
+        const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, startCursor);
+        if (wrapCursor.findNext()) {
+            editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
+            editorInstance.scrollIntoView({from: wrapCursor.from(), to: wrapCursor.to()}, 150);
+        }
+    } else {
+        // Gevonden! Selecteer het resultaat
         editorInstance.setSelection(cursor.from(), cursor.to());
         editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
-        // We gebruiken een kleine vertraging voor de teller update
-        setTimeout(updateMatchCounters, 20);
     }
+    
+    // Update de tellers direct
+    setTimeout(updateMatchCounters, 50);
 };
 
 const findPrev = () => {
@@ -409,40 +424,70 @@ const findPrev = () => {
     
     editorInstance.focus();
     
-    const cursor = editorInstance.getSearchCursor(searchQuery.value);
-    const startFrom = editorInstance.getCursor("from");
+    // Pak de huidige cursorpositie van de SELECTIE (het begin daarvan)
+    const currentCursor = editorInstance.getCursor("from");
+    const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor);
     
-    if (!cursor.findPrevious(startFrom)) {
-        // Ga naar de allerlaatste match
-        while(cursor.findNext());
-    }
-    
-    if (cursor.from()) {
+    if (!cursor.findPrevious()) {
+        // Als we bovenaan zijn, ga naar de allerlaatste match onderaan
+        const endCursor = {line: editorInstance.lineCount() - 1};
+        const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, endCursor);
+        if (wrapCursor.findPrevious()) {
+            editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
+            editorInstance.scrollIntoView({from: wrapCursor.from(), to: wrapCursor.to()}, 150);
+        }
+    } else {
         editorInstance.setSelection(cursor.from(), cursor.to());
         editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
-        setTimeout(updateMatchCounters, 20);
     }
+    
+    setTimeout(updateMatchCounters, 50);
 };
 
 const updateMatchCounters = () => {
-    const content = editorInstance.getValue().toLowerCase();
-    const query = searchQuery.value.toLowerCase();
-    const matches = content.split(query).length - 1;
-    totalMatches.value = matches;
+    if (!editorInstance || !searchQuery.value) {
+        totalMatches.value = 0;
+        currentMatchIndex.value = 0;
+        return;
+    }
 
-    // Bepaal welk resultaat we nu hebben door de index van de cursor te vergelijken
-    const cursorIndex = editorInstance.indexFromPos(editorInstance.getCursor("from"));
-    const textBeforeCursor = content.substring(0, cursorIndex + query.length);
-    currentMatchIndex.value = textBeforeCursor.split(query).length - 1;
+    const content = editorInstance.getValue();
+    const query = searchQuery.value;
+    
+    // Tel totaal aantal matches (case-insensitive)
+    const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const matches = content.match(regex);
+    totalMatches.value = matches ? matches.length : 0;
+
+    if (totalMatches.value > 0) {
+        // Bepaal welke match momenteall geselecteerd is
+        const cursorFrom = editorInstance.getCursor("from");
+        const allCursor = editorInstance.getSearchCursor(query, {line: 0, ch: 0});
+        let count = 0;
+        let foundIndex = 0;
+
+        while (allCursor.findNext()) {
+            count++;
+            // Als de match die we nu vinden overeenkomt met de cursorpositie
+            if (allCursor.from().line === cursorFrom.line && allCursor.from().ch === cursorFrom.ch) {
+                foundIndex = count;
+            }
+        }
+        currentMatchIndex.value = foundIndex || 1;
+    } else {
+        currentMatchIndex.value = 0;
+    }
 };
-
-        const replaceAll = () => {
+        
+         const replaceAll = () => {
             if (!editorInstance || !searchQuery.value) return;
             const content = editorInstance.getValue();
             const newContent = content.split(searchQuery.value).join(replaceQuery.value);
             editorInstance.setValue(newContent);
-            showToast('Alles vervangen', 'success');
-        };
+            showToast('Alles vervangen', 'success');       
+ };       
+        
+        
         
 // Zorg dat we bij het OPENEN van een file of project de 'originalContent' vastleggen
 const setActiveFileWithCleanCheck = (name) => {
@@ -489,6 +534,8 @@ watch(searchQuery, (newQuery) => {
         updateMatchCounters();
     }, 20);
 });
+
+
 
         
         
