@@ -152,8 +152,16 @@ editorInstance = CodeMirror(editorContainer.value, {
                 lineWrapping: true,
                 indentUnit: 4,
                 tabSize: 4,
-                gutters: ["CodeMirror-lint-markers"], // Voegt de kantlijn voor fouten toe
-                lint: true // Zet de live foutcontrole aan
+                gutters: ["CodeMirror-lint-markers"],
+                // VERVANG lint: true DOOR DIT:
+                lint: {
+                    options: {
+                        esversion: 6, // Hiermee herkent hij const, let en =>
+                        asi: true,    // Optioneel: dit negeert waarschuwingen over ontbrekende puntkomma's
+                        browser: true,
+                        devel: true
+                    }
+                }
             });
 
             if (editorInstance) {
@@ -1062,29 +1070,46 @@ const closeTab = (name) => {
         
 const checkServerStatus = async () => {
     try {
-        // De verbeterde fetch regel:
+        // Stap 1: De Check
+        // We vragen aan de API (poort 5000) wat de status is.
+        // De ?t= zorgt dat de browser niet een oud antwoord uit het geheugen pakt.
         const res = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`, {
+            method: 'GET',
+            mode: 'cors', // Cruciaal voor communicatie tussen poort 80 en 5000
             cache: 'no-store'
         });
 
-        if (!res.ok) throw new Error('Server onbereikbaar');
+        if (!res.ok) throw new Error('Server API reageert niet correct');
 
         const data = await res.json();
         
+        // Stap 2: Update de Status
+        // We kijken of de status van de server (data.status) anders is dan wat we nu op het scherm zien.
         if (publishStatus.value !== data.status) {
-            console.log(`[Status] Server is nu: ${data.status}`);
-            publishStatus.value = data.status;
+            console.log(`[Status Update] Server status gewijzigd naar: ${data.status}`);
+            publishStatus.value = data.status; // Hierdoor veranderen de knoppen in de UI
             
+            // Stap 3: De Live Preview koppelen
             if (data.status === 'Running') {
-                 const iframe = document.querySelector('iframe');
-                 if (iframe && (!iframe.src || !iframe.src.includes(':8080'))) {
-                    iframe.removeAttribute('srcdoc');
-                    iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
-                 }
+                const iframe = document.querySelector('iframe');
+                if (iframe) {
+                    // We halen window.location.hostname uit een variabele om de 'undefined' error te voorkomen
+                    const currentHost = window.location.hostname || 'localhost';
+                    const liveUrl = `http://${currentHost}:8080?t=${Date.now()}`;
+                    
+                    // Alleen de src aanpassen als die nog niet naar de live site wijst
+                    if (!iframe.src.includes(':8080')) {
+                        console.log("[Status] Schakelen naar Live Preview poort 8080");
+                        iframe.removeAttribute('srcdoc'); // Verwijder de editor-preview
+                        iframe.src = liveUrl;
+                    }
+                }
             }
         }
     } catch (e) {
-        console.warn('[Status Check] Kon server status niet ophalen:', e.message);
+        // Als de server uit staat of de API crasht, komt hij hier terecht.
+        console.warn('[Status Check Failed]', e.message);
+        // We zetten hem hier NIET op Stopped, om te voorkomen dat het scherm flikkert bij een kleine hapering.
     }
 };
 
