@@ -103,6 +103,10 @@ createApp({
         const clientId = ref(CLIENT_ID);
         const apiUrl = ref(API_URL);
 
+		window.appStatus = publishStatus;
+
+
+		
         const REQUIRED_FILES = [
             'index.html', 'styles.css', 'tailwind.js', 'core.js', 'render.js'
         ];
