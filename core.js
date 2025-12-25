@@ -7,8 +7,8 @@ const API_URL = 'http://10.10.2.20:5000';  // Backend API URL
 const CLIENT_ID = 'sandman';                 // Unieke gebruiker ID
 const APP_NAME = 'sitebuilder';       
 const SERVER_API = 'http://10.1.2.207:5000';   
-const PUBLISH_API = window.location.origin;
-
+// const PUBLISH_API = window.location.origin;
+const PUBLISH_API = 'http://10.1.2.207:8080';   
 // ============================================
 // OFFLINE MANAGER INITIALISATIE
 // ============================================
@@ -1120,7 +1120,7 @@ const publishProject = async (project, backup) => {
     showPublishModal.value = false; 
 
     try {
-        const response = await fetch(`${PUBLISH_API}/api/publish`, {
+        const response = await fetch(`${SERVER_API}/api/publish`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1159,7 +1159,7 @@ const stopServer = async () => {
         // Direct visueel op 'Stopping' zetten
         publishStatus.value = 'Stopping...';
         
-       const response = await fetch(`${PUBLISH_API}/api/stop-server`, {
+       const response = await fetch(`${SERVER_API}/api/stop-server`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
