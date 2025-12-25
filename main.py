@@ -8,11 +8,11 @@ from flask_cors import CORS
 ADMIN_PORT = 80
 PUBLIC_PORT = 8080
 PUBLISH_DIR = '/var/www/published'
-BUILDER_DIR = '/usr/src/app/builder' # Waar index.html, core.js etc staan
+BUILDER_DIR = '/usr/src/app/builder'
 
-# Zorg dat de map bestaat
-if not os.path.exists(PUBLISH_DIR):
-    os.makedirs(PUBLISH_DIR)
+# Zorg dat de mappen bestaan
+os.makedirs(PUBLISH_DIR, exist_ok=True)
+os.makedirs(BUILDER_DIR, exist_ok=True)
 
 app_admin = Flask(__name__)
 CORS(app_admin)
@@ -31,14 +31,15 @@ def publish():
         data = request.json
         files = data.get('files', [])
         
-        # Maak map leeg
+        # Maak map leeg voor schone installatie
         if os.path.exists(PUBLISH_DIR):
             shutil.rmtree(PUBLISH_DIR)
         os.makedirs(PUBLISH_DIR)
         
-        # Schrijf bestanden
         for file in files:
-            file_path = os.path.join(PUBLISH_DIR, file['name'])
+            # Veilig pad maken (voorkom dat bestanden buiten de map schrijven)
+            filename = file['name'].lstrip('/')
+            file_path = os.path.join(PUBLISH_DIR, filename)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(file['content'])
@@ -60,38 +61,39 @@ def stop_server():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-# Serveer de Builder bestanden (index.html, core.js etc)
+# --- BUILDER SERVING (PORT 80) ---
+# Deze route zorgt dat de hoofdmap de index.html pakt
 @app_admin.route('/')
 def serve_builder_index():
     return send_from_directory(BUILDER_DIR, 'index.html')
 
-@app_admin.route('/<path:path>')
-def serve_builder_files(path):
-    return send_from_directory(BUILDER_DIR, path)
+# Deze route zorgt dat ALLE bestanden (ook in submappen) gevonden worden
+@app_admin.route('/<path:filename>')
+def serve_builder_files(filename):
+    return send_from_directory(BUILDER_DIR, filename)
 
 # --- PUBLIC SERVER (PORT 8080) ---
-
 app_public = Flask(__name__)
 
 @app_public.route('/')
 def serve_public_index():
     return send_from_directory(PUBLISH_DIR, 'index.html')
 
-@app_public.route('/<path:path>')
-def serve_public_files(path):
-    return send_from_directory(PUBLISH_DIR, path)
+@app_public.route('/<path:filename>')
+def serve_public_files(filename):
+    return send_from_directory(PUBLISH_DIR, filename)
 
-# --- STARTUP LOGICA ---
-
+# --- STARTUP ---
 def run_admin():
+    # threaded=True is belangrijk om meerdere verzoeken tegelijk aan te kunnen
     app_admin.run(host='0.0.0.0', port=ADMIN_PORT, threaded=True)
 
 def run_public():
     app_public.run(host='0.0.0.0', port=PUBLIC_PORT, threaded=True)
 
 if __name__ == '__main__':
-    print(f"[*] Starting Admin UI on port {ADMIN_PORT}")
-    threading.Thread(target=run_admin).start()
+    print(f"[*] Builder UI & API op poort {ADMIN_PORT}")
+    threading.Thread(target=run_admin, daemon=True).start()
     
-    print(f"[*] Starting Public Site on port {PUBLIC_PORT}")
-    threading.Thread(target=run_public).start()
+    print(f"[*] Publieke site op poort {PUBLIC_PORT}")
+    run_public() # De laatste draait in de main thread
