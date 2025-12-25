@@ -1080,50 +1080,48 @@ const closeTab = (name) => {
 };       
         
         
+// NIEUWE FUNCTIE (COMPLETE REPLACEMENT):
 const checkServerStatus = async () => {
-    try {
-        // Stap 1: De Check
-        // We vragen aan de API (poort 5000) wat de status is.
-        // De ?t= zorgt dat de browser niet een oud antwoord uit het geheugen pakt.
-        const res = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`, {
-            method: 'GET',
-            mode: 'cors', // Cruciaal voor communicatie tussen poort 80 en 5000
-            cache: 'no-store'
-        });
-
-        if (!res.ok) throw new Error('Server API reageert niet correct');
-
-        const data = await res.json();
-        
-        // Stap 2: Update de Status
-        // We kijken of de status van de server (data.status) anders is dan wat we nu op het scherm zien.
-        if (publishStatus.value !== data.status) {
-            console.log(`[Status Update] Server status gewijzigd naar: ${data.status}`);
-            publishStatus.value = data.status; // Hierdoor veranderen de knoppen in de UI
-            
-            // Stap 3: De Live Preview koppelen
-            if (data.status === 'Running') {
-                const iframe = document.querySelector('iframe');
-                if (iframe) {
-                    // We halen window.location.hostname uit een variabele om de 'undefined' error te voorkomen
-        
-const liveUrl = `${PUBLISH_API}?t=${Date.now()}`;
-                    
-                    // Alleen de src aanpassen als die nog niet naar de live site wijst
-                    if (!iframe.src.includes(':8080')) {
-                        console.log("[Status] Schakelen naar Live Preview poort 8080");
-                        iframe.removeAttribute('srcdoc'); // Verwijder de editor-preview
-                        iframe.src = liveUrl;
-                    }
-                }
-            }
-        }
-    } catch (e) {
-        // Als de server uit staat of de API crasht, komt hij hier terecht.
-        console.warn('[Status Check Failed]', e.message);
-        // We zetten hem hier NIET op Stopped, om te voorkomen dat het scherm flikkert bij een kleine hapering.
+  try {
+    console.log('[Status] Checking server status...');
+    
+    const response = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`, {
+      method: 'GET',
+      mode: 'cors',
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-store'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Server reageert niet correct (${response.status})`);
     }
+    
+    const data = await response.json();
+    console.log('[Status] Server antwoord:', data);
+    
+    // Update de status - dit zou het groene bolletje moeten activeren
+    publishStatus.value = data.status || 'Stopped';
+    console.log('[Status] publishStatus.value nu:', publishStatus.value);
+    
+    // Als de server Running is, zet de iframe naar de live site
+    if (data.status === 'Running') {
+      const iframe = document.querySelector('iframe');
+      if (iframe) {
+        const liveUrl = `http://${window.location.hostname}:8080`;
+        console.log('[Status] Switching iframe to live URL:', liveUrl);
+        iframe.removeAttribute('srcdoc');
+        iframe.src = liveUrl + `?t=${Date.now()}`;
+      }
+    }
+    
+  } catch (err) {
+    console.error('[Status] Check mislukt:', err.message);
+    // We zetten NIET automatisch op Stopped - hou de laatste status
+  }
 };
+
 
 		
 const publishProject = async (project, backup) => {
