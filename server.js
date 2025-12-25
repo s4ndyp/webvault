@@ -1,8 +1,10 @@
 const express = require('express');
+const cors = require('cors'); // <--- TOEVOEGEN
 const fs = require('fs-extra');
 const path = require('path');
 const app = express();
 
+app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 const PUBLISH_DIR = '/var/www/published';
