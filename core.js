@@ -5,7 +5,8 @@
 // ============================================
 const API_URL = 'http://10.10.2.20:5000';  // Backend API URL
 const CLIENT_ID = 'sandman';                 // Unieke gebruiker ID
-const APP_NAME = 'sitebuilder';              // App naam voor collectie-prefix
+const APP_NAME = 'sitebuilder';       
+const SERVER_API = 'http://10.1.2.207:5000';   
 const PUBLISH_API = window.location.origin;
 
 // ============================================
@@ -143,14 +144,16 @@ onMounted(async () => {
             
             editorContainer.value.innerHTML = '';
             
-            editorInstance = CodeMirror(editorContainer.value, {
+editorInstance = CodeMirror(editorContainer.value, {
                 value: activeFile.value ? activeFile.value.content : '',
                 mode: 'htmlmixed',
                 theme: 'material-darker',
                 lineNumbers: true,
                 lineWrapping: true,
                 indentUnit: 4,
-                tabSize: 4
+                tabSize: 4,
+                gutters: ["CodeMirror-lint-markers"], // Voegt de kantlijn voor fouten toe
+                lint: true // Zet de live foutcontrole aan
             });
 
             if (editorInstance) {
@@ -738,6 +741,50 @@ const handleFileUpload = async (event) => {
             }
         };
 
+  const beautifyCode = () => {
+            if (!editorInstance || !activeFileName.value) return;
+
+            const content = editorInstance.getValue();
+            const fileName = activeFileName.value.toLowerCase();
+            let beautified = content;
+
+            // Standaardinstellingen die zorgen voor die "mooie structuur"
+            const options = {
+                indent_size: 4,
+                indent_char: " ",
+                max_preserve_newlines: 2,
+                preserve_newlines: true,
+                keep_array_indentation: false,
+                break_chained_methods: false,
+                indent_scripts: "normal",
+                brace_style: "collapse,preserve-inline",
+                space_before_conditional: true,
+                unescape_strings: false,
+                jslint_happy: false,
+                end_with_newline: true,
+                wrap_line_length: 0,
+                indent_inner_html: true,
+                comma_first: false,
+                e4x: false,
+                indent_empty_lines: false
+            };
+
+            if (fileName.endsWith('.html')) {
+                beautified = html_beautify(content, options);
+            } else if (fileName.endsWith('.css')) {
+                beautified = css_beautify(content, options);
+            } else if (fileName.endsWith('.js')) {
+                beautified = js_beautify(content, options);
+            }
+
+            editorInstance.setValue(beautified);
+            showToast('Code gestructureerd!', 'success');
+        };      
+        
+        
+        
+        
+        
 // --- GEWIJZIGDE FUNCTIE: openProject ---
 const openProject = async (projectId, projectName) => {
     if (!manager) return;
@@ -1012,7 +1059,7 @@ const checkServerStatus = async () => {
     try {
         // We voegen een uniek getal toe (?t=...) om te voorkomen dat de browser 
         // een oud antwoord uit het geheugen serveert (cache-busting)
-        const res = await fetch(`${PUBLISH_API}/api/server-status?t=${Date.now()}`, {
+        const res = await fetch(`${SERVER_API/api/server-status?t=${Date.now()}`, {
             cache: 'no-store' // Extra instructie: niet cachen!
         });
 
@@ -1379,6 +1426,7 @@ const restoreVersion = async (backup) => {
             totalMatches,
             currentMatchIndex,
             updateMatchCounters,
+            beautifyCode,
             apiUrl
         };
     }

@@ -22,6 +22,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/search/searchcursor.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/search/search.min.js"></script>
 	<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/search/jump-to-line.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.7/beautify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.7/beautify-css.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.7/beautify-html.min.js"></script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/lint/lint.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/lint/lint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/lint/javascript-lint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/lint/css-lint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jshint/2.13.6/jshint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/csslint/1.0.5/csslint.min.js"></script>
     
     <script src="tailwind.js"></script>
     <link rel="stylesheet" href="styles.css">
@@ -193,10 +203,16 @@
         <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
             v{{ currentVersion }}.0
         </span>
+        <button @click="beautifyCode" 
+                class="w-6 h-6 flex items-center justify-center rounded-lg bg-gray-700/50 text-gray-400 hover:text-yellow-400 hover:bg-gray-600 transition-all border border-gray-600" 
+                title="Code structuur herstellen (Beautify)">
+            <i class="fas fa-magic text-[10px]"></i>
+        </button>
     </div>
     <span v-if="lastRestoredVersion" class="text-[9px] text-orange-400 italic leading-none mt-1">
         <i class="fas fa-undo-alt mr-1"></i> Gebaseerd op v{{ lastRestoredVersion }}
     </span>
+                           
 </div>
                     </div>
 
