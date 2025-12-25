@@ -159,7 +159,9 @@
     
     <div class="flex items-center justify-between mb-2">
         <div class="flex items-center gap-2">
-            <span :class="publishStatus === 'Running' ? 'bg-green-500 animate-pulse' : 'bg-red-500'" class="w-2 h-2 rounded-full"></span>
+            <span :class="publishStatus && publishStatus.toLowerCase() === 'running' ? 'bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500'" 
+      class="w-2.5 h-2.5 rounded-full transition-colors duration-500">
+</span>
             <span class="text-xs font-bold">{{ publishStatus }}</span>
         </div>
         <button v-if="publishStatus === 'Running'" @click="stopServer" class="text-[10px] text-red-400 hover:text-red-300 underline">Stop Server</button>
