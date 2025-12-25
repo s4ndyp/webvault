@@ -283,35 +283,37 @@ createApp({
             return `${currentVersion.value}.${file.subVersion || 0}`;
         };
 
-        const saveSingleFile = async (fileName) => {
+const saveSingleFile = async (fileName) => {
             const fileIndex = files.value.findIndex(f => f.name === fileName);
             if (fileIndex === -1) return;
 
             const file = files.value[fileIndex];
             if (!file.fileHistory) file.fileHistory = [];
             
+            // We slaan nu ook de 'major' versie op voor het volledige nummer (bijv 8.1)
             file.fileHistory.unshift({
+                majorVersion: currentVersion.value,
                 subVersion: file.subVersion || 0,
                 content: file.content,
-                note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Handmatige wijziging'),
+                note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Wijziging opgeslagen'),
                 timestamp: new Date().toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
             });
 
             if (file.fileHistory.length > 20) file.fileHistory.pop();
             file.subVersion = (file.subVersion || 0) + 1;
             
-            // UPDATE DE "CLEAN" STATE
             file.savedContent = file.content; 
             dirtyFiles.value.delete(fileName);
             saveNote.value = ''; 
             
+            // Direct opslaan in de database
             await updateProjectInDB();
 
             if (editorInstance && activeFileName.value === fileName) {
                 editorInstance.clearHistory();
             }
 
-            showToast(`${fileName} bijgewerkt naar v${getFileVersion(fileName)}`, 'success');
+            showToast(`${fileName} opgeslagen als v${currentVersion.value}.${file.subVersion - 1}`, 'success');
         };
 
  // --- VERVANG DE INHOUD VAN restoreFileSubVersion ---
@@ -382,37 +384,43 @@ const restoreFileSubVersion = (fileName, historyItem) => {
         // --- ZOEK & VERVANG ---
 const findNext = () => {
     if (!editorInstance || !searchQuery.value) return;
-    const cursor = editorInstance.getSearchCursor(searchQuery.value);
     
-    // Als we al een selectie hebben, start na de huidige selectie
+    // Zorg dat de editor focus heeft zodat de selectie zichtbaar is
+    editorInstance.focus();
+    
+    const cursor = editorInstance.getSearchCursor(searchQuery.value);
     const startFrom = editorInstance.getCursor("to");
     
     if (!cursor.findNext(startFrom)) {
-        // Indien we aan het einde zijn, begin weer bovenaan (wrap around)
+        // Wrap around naar begin
         cursor.findNext();
     }
     
     if (cursor.from()) {
         editorInstance.setSelection(cursor.from(), cursor.to());
         editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
-        updateMatchCounters();
+        // We gebruiken een kleine vertraging voor de teller update
+        setTimeout(updateMatchCounters, 20);
     }
 };
 
 const findPrev = () => {
     if (!editorInstance || !searchQuery.value) return;
+    
+    editorInstance.focus();
+    
     const cursor = editorInstance.getSearchCursor(searchQuery.value);
     const startFrom = editorInstance.getCursor("from");
     
     if (!cursor.findPrevious(startFrom)) {
-        // Indien we bovenaan zijn, ga naar de laatste onderaan
+        // Ga naar de allerlaatste match
         while(cursor.findNext());
     }
     
     if (cursor.from()) {
         editorInstance.setSelection(cursor.from(), cursor.to());
         editorInstance.scrollIntoView({from: cursor.from(), to: cursor.to()}, 150);
-        updateMatchCounters();
+        setTimeout(updateMatchCounters, 20);
     }
 };
 
@@ -450,20 +458,19 @@ const setActiveFileWithCleanCheck = (name) => {
 watch(searchQuery, (newQuery) => {
     if (!editorInstance) return;
 
-    // 1. Verwijder de oude markeringen (highlights)
+    // 1. Verwijder oude highlights
     if (editorInstance.state.searchOverlay) {
         editorInstance.removeOverlay(editorInstance.state.searchOverlay);
     }
 
-    // 2. Als het veld leeg is of te kort: reset alles en stop
+    // 2. Reset tellers bij leeg veld
     if (!newQuery || newQuery.length < 2) {
-        searchMatches.value = "";
         totalMatches.value = 0;
         currentMatchIndex.value = 0;
         return;
     }
 
-    // 3. Teken de nieuwe markeringen in de editor
+    // 3. Teken de highlights (zonder focus te verplaatsen!)
     editorInstance.state.searchOverlay = {
         token: function(stream) {
             const query = newQuery.toLowerCase();
@@ -474,6 +481,14 @@ watch(searchQuery, (newQuery) => {
             stream.next();
         }
     };
+    editorInstance.addOverlay(editorInstance.state.searchOverlay);
+
+    // 4. Update alleen de tellers, maar GEEN findNext() aanroepen tijdens het typen
+    // Hierdoor blijft je cursor gewoon in het invoerveld staan.
+    setTimeout(() => {
+        updateMatchCounters();
+    }, 20);
+});
     editorInstance.addOverlay(editorInstance.state.searchOverlay);
 
     // 4. Update de tellers en spring direct naar het eerste resultaat
@@ -1136,14 +1151,15 @@ const setActiveFile = (name) => {
 // --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
 const restoreVersion = async (backup) => {
     if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
-        // Markeer welke versie de bron is
+        // 1. Markeer herkomst
         lastRestoredVersion.value = backup.version;
         saveNote.value = `Herstart vanaf v${backup.version}`;
 
-        // Bestanden overschrijven
+        // 2. Bestanden overschrijven
         files.value = JSON.parse(JSON.stringify(backup.files));
         
-        // Versiebeheer logica (zoals eerder besproken)
+        // 3. Versiebeheer logica:
+        // We bepalen wat het volgende HOOFDnummer wordt
         const highestInHistory = history.value.length > 0 
             ? Math.max(...history.value.map(h => h.version)) 
             : backup.version;
@@ -1151,8 +1167,12 @@ const restoreVersion = async (backup) => {
         currentVersion.value = highestInHistory + 1;
         highestVersion.value = highestInHistory + 1;
 
-        // FORCEER EDITOR UPDATE
-        // We wachten tot Vue de data heeft verwerkt en herladen dan het actieve bestand in de editor
+        // --- DE FIX: Reset sub-versies van de herstelde bestanden ---
+        files.value.forEach(f => {
+            f.subVersion = 0; // Nieuwe start voor alle bestanden
+            f.activeSubVersion = null;
+        });
+
         await nextTick();
         if (activeFileName.value) {
             const currentFile = files.value.find(f => f.name === activeFileName.value);
@@ -1165,7 +1185,7 @@ const restoreVersion = async (backup) => {
         updatePreview();
         await updateProjectInDB();
         
-        showToast(`Versie ${backup.version} hersteld. Editor bijgewerkt.`, 'success');
+        showToast(`Versie ${backup.version} hersteld. Nieuwe hoofdversie: v${currentVersion.value}.0`, 'success');
         expandedProjectId.value = null;
     }
 };
