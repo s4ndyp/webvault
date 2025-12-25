@@ -356,7 +356,12 @@
             <div class="bg-indigo-900/20 border-b border-indigo-500/10 p-2 flex justify-between items-center text-[10px] text-indigo-400/60 px-4 uppercase font-bold tracking-widest">
                 <span>Live Voorbeeld</span>
             </div>
-            <iframe :srcdoc="previewContent" class="w-full h-full border-none bg-slate-900" sandbox="allow-scripts allow-modals allow-same-origin allow-forms"></iframe>
+            <iframe 
+    id="preview-iframe"
+    class="w-full h-full border-none bg-slate-900" 
+    src="about:blank"
+    sandbox="allow-scripts allow-modals allow-same-origin allow-forms">
+</iframe>
         </div>
     </div>
 </div>
