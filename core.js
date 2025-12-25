@@ -160,7 +160,7 @@ editorInstance = CodeMirror(editorContainer.value, {
                 // VERVANG lint: true DOOR DIT:
                 lint: {
                     options: {
-                        esversion: 6, // Hiermee herkent hij const, let en =>
+                        esversion: 11, // Hiermee herkent hij const, let en =>
                         asi: true,    // Optioneel: dit negeert waarschuwingen over ontbrekende puntkomma's
                         browser: true,
                         devel: true
