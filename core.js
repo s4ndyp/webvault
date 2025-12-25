@@ -37,15 +37,23 @@ async function initManager() {
         });
         
         // De bestaande setInterval voor auto-sync
-        setInterval(async () => {
-            if (navigator.onLine && manager && typeof publishStatus !== 'undefined' && publishStatus.value !== 'Stopping...') {
-                console.log('[Manager] Automatische cache refresh...');
-                await manager.refreshCache('projects');
-                if (publishStatus.value !== 'Stopped') {
-                    await checkServerStatus();
-                }
-            }
-        }, 60000);
+setInterval(async () => {
+  if (navigator.onLine && manager) {
+    try {
+      console.log('[Manager] Automatische cache refresh...');
+      await manager.refreshCache('projects');
+      
+      // Only check server status if we're interested in it
+      if (publishStatus.value !== 'Stopped' && publishStatus.value !== 'Stopping...') {
+        await checkServerStatus();
+      }
+    } catch (err) {
+      console.error('[Manager] Auto-sync fout:', err);
+      // Niet fataal - ga door met volgende poging
+    }
+  }
+}, 60000);
+
     }
 }
 // ============================================
