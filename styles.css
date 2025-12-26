@@ -150,7 +150,7 @@ aside nav button, aside nav .group {
     border-left: 3px solid #22c55e;
 }
 
-/* Nieuw rood: Verwijderde regels (als widget tussen de regels) */
+/* Nieuw rood: Verwijderde regels (als widget tussen de regels) 
 .diff-removed-widget {
     background-color: rgba(239, 68, 68, 0.15);
     border-left: 3px solid #ef4444;
@@ -160,7 +160,20 @@ aside nav button, aside nav .group {
     padding: 2px 8px;
     margin: 1px 0;
     pointer-events: none;
+}*/
+.diff-removed-widget {
+    background-color: rgba(239, 68, 68, 0.2) !important;
+    color: #f87171 !important;
+    border-left: 4px solid #ef4444 !important;
+    padding: 4px 12px !important;
+    margin: 2px 0 !important;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px !important;
+    line-height: 1.5 !important;
+    white-space: pre-wrap !important;
+    display: block !important; /* Dwingt CodeMirror om ruimte te maken */
+    z-index: 10 !important;
+    box-sizing: border-box !important;
 }
-
 
 

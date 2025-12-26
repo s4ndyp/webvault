@@ -475,102 +475,121 @@ createApp({
         const undo = () => { if (editorInstance) editorInstance.undo(); };
         const redo = () => { if (editorInstance) editorInstance.redo(); };
 
-        // --- ZOEK & VERVANG ---
-        const findNext = () => {
-            if (!editorInstance || !searchQuery.value) return;
+        // --- ZOEK & VERVANG (GEOPTIMALISEERD) ---
+                    const findNext = () => {
+                        if (!editorInstance || !searchQuery.value) return;
 
-            // Forceer focus naar de editor
-            editorInstance.focus();
+                        editorInstance.focus();
 
-            // Pak de huidige cursorpositie van de SELECTIE (het einde daarvan)
-            const currentCursor = editorInstance.getCursor("to");
-            const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor);
+                        // Pak de huidige cursorpositie
+                        const currentCursor = editorInstance.getCursor("to");
+                        
+                        // FIX: Voeg { caseFold: true } toe zodat hij ook 'Body' vindt als je 'body' zoekt
+                        const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor, { caseFold: true });
 
-            if (!cursor.findNext()) {
-                // Als we onderaan zijn, begin bovenaan opnieuw
-                const startCursor = { line: 0, ch: 0 };
-                const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, startCursor);
-                if (wrapCursor.findNext()) {
-                    editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
-                    editorInstance.scrollIntoView({ from: wrapCursor.from(), to: wrapCursor.to() }, 150);
-                }
-            } else {
-                // Gevonden! Selecteer het resultaat
-                editorInstance.setSelection(cursor.from(), cursor.to());
-                editorInstance.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 150);
-            }
+                        if (!cursor.findNext()) {
+                            // Wrap around: begin weer bovenaan
+                            const startCursor = { line: 0, ch: 0 };
+                            const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, startCursor, { caseFold: true });
+                            if (wrapCursor.findNext()) {
+                                editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
+                                try {
+                                    editorInstance.scrollIntoView({ from: wrapCursor.from(), to: wrapCursor.to() }, 150);
+                                } catch (e) { /* Negeer scrollfouten bij Diff mode */ }
+                            }
+                        } else {
+                            // Gevonden!
+                            editorInstance.setSelection(cursor.from(), cursor.to());
+                            try {
+                                editorInstance.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 150);
+                            } catch (e) { /* Negeer scrollfouten */ }
+                        }
 
-            // Update de tellers direct
-            setTimeout(updateMatchCounters, 50);
-        };
+                        setTimeout(updateMatchCounters, 50);
+                    };
 
-        const findPrev = () => {
-            if (!editorInstance || !searchQuery.value) return;
+                    const findPrev = () => {
+                        if (!editorInstance || !searchQuery.value) return;
 
-            editorInstance.focus();
+                        editorInstance.focus();
+                        const currentCursor = editorInstance.getCursor("from");
+                        
+                        // FIX: Ook hier { caseFold: true }
+                        const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor, { caseFold: true });
 
-            // Pak de huidige cursorpositie van de SELECTIE (het begin daarvan)
-            const currentCursor = editorInstance.getCursor("from");
-            const cursor = editorInstance.getSearchCursor(searchQuery.value, currentCursor);
+                        if (!cursor.findPrevious()) {
+                            // Wrap around: ga naar onderen
+                            const endCursor = { line: editorInstance.lineCount() - 1 };
+                            const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, endCursor, { caseFold: true });
+                            if (wrapCursor.findPrevious()) {
+                                editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
+                                try {
+                                    editorInstance.scrollIntoView({ from: wrapCursor.from(), to: wrapCursor.to() }, 150);
+                                } catch (e) { /* Negeer scrollfouten */ }
+                            }
+                        } else {
+                            editorInstance.setSelection(cursor.from(), cursor.to());
+                            try {
+                                editorInstance.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 150);
+                            } catch (e) { /* Negeer scrollfouten */ }
+                        }
 
-            if (!cursor.findPrevious()) {
-                // Als we bovenaan zijn, ga naar de allerlaatste match onderaan
-                const endCursor = { line: editorInstance.lineCount() - 1 };
-                const wrapCursor = editorInstance.getSearchCursor(searchQuery.value, endCursor);
-                if (wrapCursor.findPrevious()) {
-                    editorInstance.setSelection(wrapCursor.from(), wrapCursor.to());
-                    editorInstance.scrollIntoView({ from: wrapCursor.from(), to: wrapCursor.to() }, 150);
-                }
-            } else {
-                editorInstance.setSelection(cursor.from(), cursor.to());
-                editorInstance.scrollIntoView({ from: cursor.from(), to: cursor.to() }, 150);
-            }
+                        setTimeout(updateMatchCounters, 50);
+                    };
 
-            setTimeout(updateMatchCounters, 50);
-        };
+                    const updateMatchCounters = () => {
+                        if (!editorInstance || !searchQuery.value) {
+                            totalMatches.value = 0;
+                            currentMatchIndex.value = 0;
+                            return;
+                        }
 
-        const updateMatchCounters = () => {
-            if (!editorInstance || !searchQuery.value) {
-                totalMatches.value = 0;
-                currentMatchIndex.value = 0;
-                return;
-            }
+                        const content = editorInstance.getValue();
+                        const query = searchQuery.value;
 
-            const content = editorInstance.getValue();
-            const query = searchQuery.value;
+                        // 1. Tel totaal aantal matches (Regex was al case-insensitive door 'gi')
+                        try {
+                            const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                            const matches = content.match(regex);
+                            totalMatches.value = matches ? matches.length : 0;
+                        } catch (e) {
+                            totalMatches.value = 0;
+                        }
 
-            // Tel totaal aantal matches (case-insensitive)
-            const regex = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-            const matches = content.match(regex);
-            totalMatches.value = matches ? matches.length : 0;
+                        if (totalMatches.value > 0) {
+                            // 2. Bepaal welke match geselecteerd is
+                            const cursorFrom = editorInstance.getCursor("from");
+                            
+                            // FIX: Ook hier caseFold toevoegen, anders klopt de "3/5" teller niet met de werkelijkheid
+                            const allCursor = editorInstance.getSearchCursor(query, { line: 0, ch: 0 }, { caseFold: true });
+                            
+                            let count = 0;
+                            let foundIndex = 0;
 
-            if (totalMatches.value > 0) {
-                // Bepaal welke match momenteall geselecteerd is
-                const cursorFrom = editorInstance.getCursor("from");
-                const allCursor = editorInstance.getSearchCursor(query, { line: 0, ch: 0 });
-                let count = 0;
-                let foundIndex = 0;
+                            while (allCursor.findNext()) {
+                                count++;
+                                // Check of deze match overlapt met de huidige selectie
+                                const from = allCursor.from();
+                                if (from.line === cursorFrom.line && from.ch === cursorFrom.ch) {
+                                    foundIndex = count;
+                                }
+                            }
+                            currentMatchIndex.value = foundIndex || 0; // Zet op 0 als we er 'tussenin' staan
+                        } else {
+                            currentMatchIndex.value = 0;
+                        }
+                    };
 
-                while (allCursor.findNext()) {
-                    count++;
-                    // Als de match die we nu vinden overeenkomt met de cursorpositie
-                    if (allCursor.from().line === cursorFrom.line && allCursor.from().ch === cursorFrom.ch) {
-                        foundIndex = count;
-                    }
-                }
-                currentMatchIndex.value = foundIndex || 1;
-            } else {
-                currentMatchIndex.value = 0;
-            }
-        };
-
-        const replaceAll = () => {
-            if (!editorInstance || !searchQuery.value) return;
-            const content = editorInstance.getValue();
-            const newContent = content.split(searchQuery.value).join(replaceQuery.value);
-            editorInstance.setValue(newContent);
-            showToast('Alles vervangen', 'success');
-        };
+                    const replaceAll = () => {
+                        if (!editorInstance || !searchQuery.value) return;
+                        const content = editorInstance.getValue();
+                        // Maak een case-insensitive regex voor de replace
+                        const regex = new RegExp(searchQuery.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+                        const newContent = content.replace(regex, replaceQuery.value);
+                        
+                        editorInstance.setValue(newContent);
+                        showToast('Alles vervangen', 'success');
+                    };
 
         // Zorg dat we bij het OPENEN van een file of project de 'originalContent' vastleggen
         const setActiveFileWithCleanCheck = (name) => {
@@ -1388,7 +1407,7 @@ createApp({
             // We pakken de huidige files direct uit de editor (met de laatste wijzigingen)
             const currentFiles = JSON.parse(JSON.stringify(files.value));
 
-            const response = await fetch(`${PUBLISH_API}/api/publish`, {
+            const response = await fetch(`${SERVER_API}/api/publish`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
