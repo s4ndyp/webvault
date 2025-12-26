@@ -336,9 +336,7 @@ const completeHtml = `<!DOCTYPE html>
     iframe.srcdoc = completeHtml;
 };
 
-    iframe.removeAttribute('src');
-    iframe.srcdoc = completeHtml;
-};
+
         const setViewMode = (mode) => {
             viewMode.value = mode;
             if (mode !== 'preview') {
