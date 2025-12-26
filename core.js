@@ -306,13 +306,12 @@ const updatePreview = () => {
     // 4. Bouw de HTML. We laden Tailwind CDN nog wel standaard in de <head> 
     // zodat je de classes altijd kunt gebruiken, maar jouw JS bestanden 
     // handelen de rest af.
-    const completeHtml = `<!DOCTYPE html>
+const completeHtml = `<!DOCTYPE html>
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Basis styling voor de editor preview */
         body { 
             margin: 0; 
             padding: 0; 
@@ -326,19 +325,20 @@ const updatePreview = () => {
 <body>
     ${htmlContent}
     
-    <script>
-        // Hier worden al jouw JS bestanden uit de tabbladen uitgevoerd
+    <script type="module">
+        // Alle JS bestanden gebundeld als module
         ${allJs}
     </script>
 </body>
 </html>`;
-
     // 5. Injecteren in de iframe
     iframe.removeAttribute('src');
     iframe.srcdoc = completeHtml;
 };
 
-
+    iframe.removeAttribute('src');
+    iframe.srcdoc = completeHtml;
+};
         const setViewMode = (mode) => {
             viewMode.value = mode;
             if (mode !== 'preview') {
