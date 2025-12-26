@@ -316,25 +316,30 @@ const updatePreview = () => {
         : `<script src="https://cdn.tailwindcss.com"></script>`;
 
 const completeHtml = `<!DOCTYPE html>
-<html lang="nl" class="dark">
+<html lang="nl">
 <head>
     <meta charset="UTF-8">
     ${tailwindScript}
     <style>
-        /* Hier maken we de basis zwart en de tekst wit */
+        /* Alleen basisinstellingen, geen geforceerd zwart als dat niet in de code staat */
         body { 
-            background-color: #000000; 
-            color: #ffffff; 
             margin: 0; 
             padding: 0; 
             min-height: 100vh;
+            /* We gebruiken een heel donkergrijze kleur voor de 'leegte', 
+               zodat je ziet waar je pagina ophoudt */
+            background-color: #1a1a1a; 
         } 
+        
+        /* Zorg dat de root variabelen goed worden geparsed */
         ${css}
     </style>
     ${extraCss}
 </head>
-<body class="bg-black text-white">
-    ${html}
+<body>
+    <div id="page-wrapper">
+        ${html}
+    </div>
     ${extraJs}
 </body>
 </html>`;
