@@ -315,18 +315,25 @@ const updatePreview = () => {
         ? `<script src="https://cdn.tailwindcss.com"></script><script>${tailwindConfig}<\/script>` 
         : `<script src="https://cdn.tailwindcss.com"></script>`;
 
-    const completeHtml = `<!DOCTYPE html>
-<html lang="nl">
+const completeHtml = `<!DOCTYPE html>
+<html lang="nl" class="dark">
 <head>
     <meta charset="UTF-8">
     ${tailwindScript}
     <style>
-        body { background-color: white; color: black; margin: 0; padding: 0; } 
+        /* Hier maken we de basis zwart en de tekst wit */
+        body { 
+            background-color: #000000; 
+            color: #ffffff; 
+            margin: 0; 
+            padding: 0; 
+            min-height: 100vh;
+        } 
         ${css}
     </style>
     ${extraCss}
 </head>
-<body>
+<body class="bg-black text-white">
     ${html}
     ${extraJs}
 </body>
