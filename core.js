@@ -278,71 +278,65 @@ createApp({
                 });
             }
         });
-
 const updatePreview = () => {
     if (!files.value || files.value.length === 0) return;
 
     const iframe = document.querySelector('iframe');
     if (!iframe) return;
 
+    // Als de server draait op 8080, de interne preview niet overschrijven
     if (publishStatus.value === 'Running') return;
 
-    // Helper om veilig content op te halen (geeft leeg terug als bestand niet bestaat)
-    const getFileContent = (name) => {
-        const f = files.value.find(file => file.name === name);
-        return f ? f.content : '';
-    };
+    // 1. Zoek de index.html (de basis van je site)
+    const indexFile = files.value.find(f => f.name === 'index.html');
+    const htmlContent = indexFile ? indexFile.content : '<h1>Systeem: index.html niet gevonden</h1>';
 
-    const html = getFileContent('index.html');
-    const css = getFileContent('styles.css');
-    const tailwindConfig = getFileContent('tailwind.js');
-
-    // Verzamel alle EXTRA CSS bestanden (behalve styles.css)
-    const extraCss = files.value
-        .filter(f => f.name.endsWith('.css') && f.name !== 'styles.css')
-        .map(f => `<style>${f.content}</style>`)
+    // 2. Verzamel ALLE CSS uit alle tabbladen (ongeacht de naam)
+    const allCss = files.value
+        .filter(f => f.name.endsWith('.css'))
+        .map(f => `/* File: ${f.name} */\n${f.content}`)
         .join('\n');
 
-    // Verzamel alle EXTRA JS bestanden (behalve tailwind.js)
-    const extraJs = files.value
-        .filter(f => f.name.endsWith('.js') && f.name !== 'tailwind.js')
-        .map(f => `<script>${f.content.replace(/<\/script>/g, '<\\/script>')}<\/script>`)
+    // 3. Verzamel ALLE JS uit alle tabbladen (ongeacht de naam)
+    const allJs = files.value
+        .filter(f => f.name.endsWith('.js'))
+        .map(f => `// File: ${f.name}\n${f.content.replace(/<\/script>/g, '<\\/script>')}`)
         .join('\n');
 
-    // We laden Tailwind CDN alleen als er een tailwind.js configuratie is
-    // Of we laden hem standaard voor het gemak:
-    const tailwindScript = tailwindConfig 
-        ? `<script src="https://cdn.tailwindcss.com"></script><script>${tailwindConfig}<\/script>` 
-        : `<script src="https://cdn.tailwindcss.com"></script>`;
-
-const completeHtml = `<!DOCTYPE html>
+    // 4. Bouw de HTML. We laden Tailwind CDN nog wel standaard in de <head> 
+    // zodat je de classes altijd kunt gebruiken, maar jouw JS bestanden 
+    // handelen de rest af.
+    const completeHtml = `<!DOCTYPE html>
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
-    ${tailwindScript}
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Alleen basisinstellingen, geen geforceerd zwart als dat niet in de code staat */
+        /* Basis styling voor de editor preview */
         body { 
             margin: 0; 
             padding: 0; 
-            min-height: 100vh;
-            /* We gebruiken een heel donkergrijze kleur voor de 'leegte', 
-               zodat je ziet waar je pagina ophoudt */
+            min-height: 100vh; 
             background-color: #1a1a1a; 
+            color: white; 
         } 
-        
-        /* Zorg dat de root variabelen goed worden geparsed */
-        ${css}
+        ${allCss}
     </style>
-    ${extraCss}
 </head>
 <body>
-    <div id="page-wrapper">
-        ${html}
-    </div>
-    ${extraJs}
+    ${htmlContent}
+    
+    <script>
+        // Hier worden al jouw JS bestanden uit de tabbladen uitgevoerd
+        ${allJs}
+    </script>
 </body>
 </html>`;
+
+    // 5. Injecteren in de iframe
+    iframe.removeAttribute('src');
+    iframe.srcdoc = completeHtml;
+};
 
     iframe.removeAttribute('src');
     iframe.srcdoc = completeHtml;
