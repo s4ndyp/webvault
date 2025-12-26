@@ -42,84 +42,117 @@
         <div id="app" v-cloak class="flex h-screen overflow-hidden relative">
 
             <aside class="flex flex-col w-72 bg-darkpaper border-r border-gray-700 h-full z-10 shrink-0">
-                <div class="p-6 border-b border-gray-700">
+
+                <div class="p-6 border-b border-gray-700 relative">
                     <div class="flex items-center gap-3 mb-2">
                         <div class="w-10 h-10 bg-gradient-to-br from-primary to-accent rounded-xl flex items-center justify-center text-white text-xl shadow-lg">
                             <i class="fas fa-code"></i>
                         </div>
-                        <h1 class="font-bold text-white truncate" :title="projectActive ? currentProjectName : 'Site Builder'">{{ projectActive ? currentProjectName : 'Site Builder' }}</h1>
+                        <h1 class="font-bold text-white truncate pr-10" :title="projectActive ? currentProjectName : 'Site Builder'">
+                            {{ projectActive ? currentProjectName : 'Site Builder' }}
+                        </h1>
                     </div>
+
                     <p class="text-xs text-green-400 flex items-center gap-1">
                         <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
                         {{ clientId }} @ Online
                     </p>
+
+                    <button v-if="projectActive" @click="toggleSymbolList" :class="showSymbolList ? 'bg-primary text-white shadow-lg shadow-primary/20 border-primary' : 'bg-gray-800/50 text-gray-500 hover:text-white border-gray-700 hover:bg-gray-700'" class="absolute top-6 right-6 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 border focus:outline-none" :title="showSymbolList ? 'Terug naar projecten' : 'Toon functies in dit bestand'">
+                        <i class="fas text-xs" :class="showSymbolList ? 'fa-folder-tree' : 'fa-list-ul'"></i>
+                    </button>
                 </div>
 
+
                 <nav class="flex-1 px-4 py-4 space-y-6 overflow-y-auto no-scrollbar">
-                    <div>
-                        <div class="flex justify-between items-center mb-2 px-2">
-                            <div class="text-xs font-bold text-gray-500 uppercase tracking-wider">Mijn Projecten</div>
-                            <button @click="showNewProjectModal = true" class="text-primary hover:text-white transition">
-                                <i class="fas fa-plus-circle"></i>
-                            </button>
-                        </div>
-                        <div class="space-y-1">
-                            <div v-for="proj in projectList" :key="proj._id" class="mb-1">
-                                <div @click="openProject(proj._id, proj.name)" :class="currentProjectId === proj._id ? 'bg-primary/20 text-white border-l-4 border-primary' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200 border-l-4 border-transparent'" class="w-full flex items-center justify-between px-4 py-3 rounded-r-xl transition-all text-sm font-medium cursor-pointer group">
 
-                                    <div class="flex items-center gap-2 truncate">
-                                        <i class="fas fa-cube text-xs opacity-50"></i>
-                                        <span class="truncate">{{ proj.name }}</span>
-                                        <div class="flex flex-col items-start">
-                                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-bold leading-none">
-                                                v{{ proj.currentVersion || 1 }}
-                                            </span>
-                                            <span v-if="proj.lastRestoredVersion" class="text-[8px] text-orange-500 font-medium mt-0.5">
-                                                <i class="fas fa-history"></i> v{{ proj.lastRestoredVersion }}
-                                            </span>
+                    <div v-if="!showSymbolList" class="space-y-6">
+                        <div>
+                            <div class="flex justify-between items-center mb-2 px-2">
+                                <div class="text-xs font-bold text-gray-500 uppercase tracking-wider">Mijn Projecten</div>
+                                <button @click="showNewProjectModal = true" class="text-primary hover:text-white transition">
+                                    <i class="fas fa-plus-circle"></i>
+                                </button>
+                            </div>
+
+                            <div class="space-y-1">
+                                <div v-for="proj in projectList" :key="proj._id" class="mb-1">
+                                    <div @click="openProject(proj._id, proj.name)" :class="currentProjectId === proj._id ? 'bg-primary/20 text-white border-l-4 border-primary' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200 border-l-4 border-transparent'" class="w-full flex items-center justify-between px-4 py-3 rounded-r-xl transition-all text-sm font-medium cursor-pointer group">
+
+                                        <div class="flex items-center gap-2 truncate">
+                                            <i class="fas fa-cube text-xs opacity-50"></i>
+                                            <span class="truncate">{{ proj.name }}</span>
+                                            <div class="flex flex-col items-start leading-none">
+                                                <span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400 font-bold">
+                                                    v{{ proj.currentVersion || 1 }}
+                                                </span>
+                                                <span v-if="proj.lastRestoredVersion" class="text-[8px] text-orange-500 font-medium mt-0.5">
+                                                    <i class="fas fa-history"></i> v{{ proj.lastRestoredVersion }}
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <div class="flex items-center gap-1">
-                                        <button @click.stop="toggleVersions(proj._id)" class="text-gray-500 hover:text-primary transition p-1">
-                                            <i class="fas fa-history text-xs"></i>
-                                        </button>
-
-                                        <button @click.stop="resetProjectHistory(proj)" class="text-orange-400 opacity-0 group-hover:opacity-100 transition p-1" title="Geschiedenis wissen & archiveren">
-                                            <i class="fas fa-broom text-xs"></i>
-                                        </button>
-
-                                        <button @click.stop="deleteProject(proj._id)" class="text-red-400 opacity-0 group-hover:opacity-100 transition p-1">
-                                            <i class="fas fa-trash-alt text-xs"></i>
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div v-if="expandedProjectId === proj._id" class="ml-8 mr-4 mt-1 mb-2 space-y-1 bg-dark/30 rounded-lg p-1 border border-gray-800">
-                                    <div v-for="backup in proj.history" :key="backup.version" class="group flex flex-col px-3 py-2 text-[11px] hover:bg-primary/10 rounded cursor-pointer transition border-b border-gray-800/50">
-
-                                        <div class="flex justify-between items-center w-full">
-                                            <span @click.stop="restoreVersion(backup, proj._id)" class="flex-1 font-bold text-gray-200">
-                                                <i class="fas fa-reply-all mr-2 opacity-50"></i>Versie {{ backup.version }}
-                                            </span>
-                                            <button @click.stop="deleteProjectBackup(proj._id, backup.version)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1">
-                                                <i class="fas fa-trash-alt text-[10px]"></i>
+                                        <div class="flex items-center gap-1">
+                                            <button @click.stop="toggleVersions(proj._id)" class="text-gray-500 hover:text-primary transition p-1">
+                                                <i class="fas fa-history text-xs"></i>
+                                            </button>
+                                            <button @click.stop="resetProjectHistory(proj)" class="text-orange-400 opacity-0 group-hover:opacity-100 transition p-1" title="Geschiedenis wissen & archiveren">
+                                                <i class="fas fa-broom text-xs"></i>
+                                            </button>
+                                            <button @click.stop="deleteProject(proj._id)" class="text-red-400 opacity-0 group-hover:opacity-100 transition p-1">
+                                                <i class="fas fa-trash-alt text-xs"></i>
                                             </button>
                                         </div>
-
-                                        <div v-if="backup.note" class="pl-6 text-[9px] text-gray-500 italic truncate italic">
-                                            {{ backup.note }}
-                                        </div>
-                                        <div class="pl-6 text-[8px] text-gray-600">
-                                            {{ backup.timestamp }}
-                                        </div>
                                     </div>
 
-                                    <div v-if="!proj.history || proj.history.length === 0" class="px-3 py-2 text-[10px] text-gray-600 italic">
-                                        Geen vorige versies
+                                    <div v-if="expandedProjectId === proj._id" class="ml-8 mr-4 mt-1 mb-2 space-y-1 bg-dark/30 rounded-lg p-1 border border-gray-800">
+                                        <div v-for="backup in proj.history" :key="backup.version" class="group flex flex-col px-3 py-2 text-[11px] hover:bg-primary/10 rounded cursor-pointer transition border-b border-gray-800/50 last:border-0">
+                                            <div class="flex justify-between items-center w-full">
+                                                <span @click.stop="restoreVersion(backup, proj._id)" class="flex-1 font-bold text-gray-200">
+                                                    <i class="fas fa-reply-all mr-2 opacity-50"></i>Versie {{ backup.version }}
+                                                </span>
+                                                <button @click.stop="deleteProjectBackup(proj._id, backup.version)" class="text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1">
+                                                    <i class="fas fa-trash-alt text-[10px]"></i>
+                                                </button>
+                                            </div>
+                                            <div v-if="backup.note" class="pl-6 text-[9px] text-gray-500 italic truncate">{{ backup.note }}</div>
+                                            <div class="pl-6 text-[8px] text-gray-600">{{ backup.timestamp }}</div>
+                                        </div>
+                                        <div v-if="!proj.history || proj.history.length === 0" class="px-3 py-2 text-[10px] text-gray-600 italic">
+                                            Geen vorige versies
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div v-else class="animate-in fade-in slide-in-from-left-4 duration-300">
+                        <div class="flex justify-between items-center mb-4 px-2">
+                            <div class="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                                <i class="fas fa-terminal text-[10px]"></i> {{ activeFileName }}
+                            </div>
+                            <span class="text-[10px] font-bold bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/30">
+                                {{ symbols.length }}
+                            </span>
+                        </div>
+
+                        <div class="space-y-1">
+                            <div v-for="symbol in symbols" :key="symbol.line" @click="jumpToSymbol(symbol.line)" class="group flex items-center justify-between px-4 py-3 rounded-xl transition-all text-sm font-medium cursor-pointer border-l-4 border-transparent hover:border-blue-500 bg-gray-800/20 hover:bg-gray-800 text-gray-400 hover:text-white">
+
+                                <div class="flex items-center gap-3 truncate">
+                                    <i class="fas fa-code text-[10px] opacity-30 group-hover:opacity-100 group-hover:text-blue-400"></i>
+                                    <span class="truncate">{{ symbol.name }}</span>
+                                </div>
+                                <span class="text-[10px] text-gray-600 group-hover:text-gray-400 font-mono">L{{ symbol.line + 1 }}</span>
+                            </div>
+
+                            <div v-if="symbols.length === 0" class="p-8 text-center bg-gray-800/10 rounded-2xl border border-dashed border-gray-800">
+                                <i class="fas fa-bolt-lightning text-gray-700 text-2xl mb-2"></i>
+                                <p class="text-gray-500 text-[10px]">Geen functies of classes gedetecteerd in dit bestand.</p>
+                            </div>
+                        </div>
+                    </div>
 
                 </nav>
 
@@ -184,39 +217,23 @@
                                 <i class="fas fa-bars"></i>
                             </button>
                             <div class="flex flex-col">
-                               <div class="flex items-center gap-2 relative">
-    <h2 class="font-bold text-white truncate max-w-[200px]">{{ currentProjectName }}</h2>
-    <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
-        v{{ currentVersion }}.0
-    </span>
-    
-    <button @click="beautifyCode" class="w-6 h-6 flex items-center justify-center rounded-lg bg-gray-700/50 text-gray-400 hover:text-yellow-400 hover:bg-gray-600 transition-all border border-gray-600" title="Code structuur herstellen (Beautify)">
-        <i class="fas fa-magic text-[10px]"></i>
-    </button>
+                                <div class="flex items-center gap-2">
+                                    <h2 class="font-bold text-white truncate max-w-[200px]">{{ currentProjectName }}</h2>
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-mono">
+                                        v{{ currentVersion }}.0
+                                    </span>
 
-    <button @click="toggleSymbolList" class="w-6 h-6 flex items-center justify-center rounded-lg bg-gray-700/50 text-gray-400 hover:text-blue-400 hover:bg-gray-600 transition-all border border-gray-600" title="Functies in dit bestand">
-        <i class="fas fa-list-ul text-[10px]"></i>
-    </button>
+                                    <button @click="beautifyCode" class="w-6 h-6 flex items-center justify-center rounded-lg bg-gray-800/50 text-gray-400 hover:text-yellow-400 hover:bg-gray-600 transition-all border border-gray-600" title="Code structuur herstellen (Beautify)">
+                                        <i class="fas fa-magic text-[10px]"></i>
+                                    </button>
 
-  <div v-if="showSymbolList" 
-     class="symbols-popup absolute left-0 top-12 w-80 bg-[#0f172a] border border-slate-700 rounded-lg shadow-[0_20px_60px_rgba(0,0,0,0.8)] z-[9999] max-h-[500px] overflow-y-auto p-2 border-t-4 border-t-blue-500"
-     style="background-color: #0f172a !important; opacity: 1 !important; backdrop-filter: none !important;">
-        <div class="text-[10px] font-bold text-gray-500 uppercase mb-2 px-2 flex justify-between">
-            <span>Functies & Definities</span>
-            <span class="bg-slate-700 px-1.5 rounded">{{ symbols.length }}</span>
-        </div>
-        <div v-for="symbol in symbols" :key="symbol.line" 
-             @click="jumpToSymbol(symbol.line)"
-             class="flex items-center gap-2 p-2 hover:bg-blue-600/20 text-gray-300 hover:text-blue-400 rounded cursor-pointer text-xs transition group border-b border-slate-700/50 last:border-0">
-            <i class="fas fa-code text-[10px] opacity-30 group-hover:opacity-100"></i>
-            <span class="truncate">{{ symbol.name }}</span>
-            <span class="ml-auto text-[9px] text-slate-500 italic">L{{ symbol.line + 1 }}</span>
-        </div>
-        <div v-if="symbols.length === 0" class="p-4 text-center text-gray-600 text-[10px]">
-            Geen functies gevonden
-        </div>
-    </div>
-</div>
+                                </div>
+
+                                <span v-if="lastRestoredVersion" class="text-[9px] text-orange-400 italic leading-none mt-1">
+                                    <i class="fas fa-undo-alt mr-1"></i> Gebaseerd op v{{ lastRestoredVersion }}
+                                </span>
+
+
                                 <span v-if="lastRestoredVersion" class="text-[9px] text-orange-400 italic leading-none mt-1">
                                     <i class="fas fa-undo-alt mr-1"></i> Gebaseerd op v{{ lastRestoredVersion }}
                                 </span>
