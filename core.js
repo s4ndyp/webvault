@@ -325,8 +325,8 @@ const completeHtml = `<!DOCTYPE html>
 <body>
     ${htmlContent}
     
-    <script type="module">
-        // Alle JS bestanden gebundeld als module
+    <script>
+        
         ${allJs}
     </script>
 </body>
