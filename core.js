@@ -1445,7 +1445,7 @@ createApp({
                 const result = await response.json();
                 if (result.success) {
                     publishStatus.value = 'Running';
-                    activePublishVersion.value = backup.version; // Zet direct de versie in de UI
+                    activePublishVersion.value = "Live Versie"; // Zet direct de versie in de UI
                     showPublishModal.value = false;
 
                     const iframe = document.querySelector('iframe');
