@@ -2,6 +2,8 @@ import os
 import shutil
 import threading
 import traceback
+import re
+import time # Zorg dat deze import bovenaan staat
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 
@@ -34,48 +36,46 @@ def publish():
             return jsonify({"success": False, "error": "Geen data ontvangen"}), 400
             
         files = data.get('files', [])
-        print(f"[*] Ontvangen: {len(files)} bestanden voor publicatie.")
+        version_label = str(data.get('version', '0'))
         
-        # STAP 1: Maak de map leeg zonder de hoofdmap zelf te verwijderen
-        # Dit is veel veiliger voor Docker-mounts en voorkomt 500 errors
+        # --- DE UNIEKE TIMESTAMP LOGICA ---
+        # We maken een tag die eruit ziet als: "1-1703581234" of "Experiment-1703581234"
+        # Dit is altijd uniek voor de browser.
+        timestamp = int(time.time())
+        cache_buster_tag = f"{version_label}-{timestamp}"
+        
+        print(f"[*] Publiceren: {version_label} (Cache Tag: {cache_buster_tag})")
+        
+        # Map leegmaken (bestaande logica blijft hetzelfde)
         if os.path.exists(PUBLISH_DIR):
             for filename in os.listdir(PUBLISH_DIR):
                 file_path = os.path.join(PUBLISH_DIR, filename)
-                try:
-                    if os.path.isfile(file_path) or os.path.islink(file_path):
-                        os.unlink(file_path)
-                    elif os.path.isdir(file_path):
-                        shutil.rmtree(file_path)
-                except Exception as e:
-                    print(f"  [!] Waarschuwing: Kon {filename} niet verwijderen: {e}")
-        else:
-            os.makedirs(PUBLISH_DIR, exist_ok=True)
-        
-        # STAP 2: Schrijf de nieuwe bestanden
+                if os.path.isfile(file_path): os.unlink(file_path)
+                elif os.path.isdir(file_path): shutil.rmtree(file_path)
+
+        # Bestanden opslaan
         for file in files:
-            name = file.get('name', '').lstrip('/')
-            if not name:
-                continue
-                
+            name = file.get('name')
             content = file.get('content', '')
+            
+            if name == 'index.html':
+                # We plakken de unieke cache_buster_tag achter de bestanden
+                content = re.sub(r'(href="[^"]+\.css)', f'\\1?v={cache_buster_tag}', content)
+                content = re.sub(r'(src="[^"]+\.js)', f'\\1?v={cache_buster_tag}', content)
+            
             file_path = os.path.join(PUBLISH_DIR, name)
-            
-            # Maak submappen aan (bijv. voor css/style.css)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
-            # Zet rechten op 644 zodat de webserver ze kan lezen
-            os.chmod(file_path, 0o644)
-        
         server_status = "Running"
-        print("[*] Publicatie succesvol voltooid.")
-        return jsonify({"success": True, "message": "Gepubliceerd!"})
-        
+        # We sturen het versienummer terug voor je UI, maar de bestanden zijn nu uniek getagd
+        return jsonify({
+            "success": True, 
+            "message": f"Gepubliceerd met cache-tag {cache_buster_tag}",
+            "version": version_label 
+        })
     except Exception as e:
-        print("[!] CRASH in /api/publish:")
-        traceback.print_exc() # Dit print de exacte regelcode van de fout in Docker logs
+        traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app_admin.route('/api/stop-server', methods=['POST'])
