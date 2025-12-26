@@ -338,9 +338,7 @@ const updatePreview = () => {
     iframe.srcdoc = completeHtml;
 };
 
-    iframe.removeAttribute('src');
-    iframe.srcdoc = completeHtml;
-};
+
         const setViewMode = (mode) => {
             viewMode.value = mode;
             if (mode !== 'preview') {
