@@ -159,9 +159,7 @@ createApp({
 
         window.appStatus = publishStatus;
 
-        const REQUIRED_FILES = [
-            'index.html', 'styles.css', 'tailwind.js', 'core.js', 'render.js'
-        ];
+        const REQUIRED_FILES = ['index.html']
 
         // --- INIT ---
         // --- INIT ---
@@ -281,46 +279,47 @@ createApp({
             }
         });
 
-        const updatePreview = () => {
-            if (!files.value || files.value.length === 0) return;
+const updatePreview = () => {
+    if (!files.value || files.value.length === 0) return;
 
-            const iframe = document.querySelector('iframe');
-            if (!iframe) return;
+    const iframe = document.querySelector('iframe');
+    if (!iframe) return;
 
-            // --- DE NIEUWE CHECK ---
-            // Als de server draait (Running), willen we de live-site op :8080 zien.
-            // We stoppen deze functie dan, zodat hij de iframe niet overschrijft.
-            if (publishStatus.value === 'Running') {
-                // We doen niets, de iframe blijft op de URL van poort 8080 staan.
-                return;
-            }
+    if (publishStatus.value === 'Running') return;
 
-            // 1. Haal de content op
-            const getFileContent = (name) => {
-                const f = files.value.find(file => file.name === name);
-                return f ? f.content : '';
-            };
+    // Helper om veilig content op te halen (geeft leeg terug als bestand niet bestaat)
+    const getFileContent = (name) => {
+        const f = files.value.find(file => file.name === name);
+        return f ? f.content : '';
+    };
 
-            const html = getFileContent('index.html');
-            const css = getFileContent('styles.css');
-            const tailwindConfig = getFileContent('tailwind.js');
+    const html = getFileContent('index.html');
+    const css = getFileContent('styles.css');
+    const tailwindConfig = getFileContent('tailwind.js');
 
-            const extraCss = files.value
-                .filter(f => f.name.endsWith('.css') && f.name !== 'styles.css')
-                .map(f => `<style>${f.content}</style>`)
-                .join('\n');
+    // Verzamel alle EXTRA CSS bestanden (behalve styles.css)
+    const extraCss = files.value
+        .filter(f => f.name.endsWith('.css') && f.name !== 'styles.css')
+        .map(f => `<style>${f.content}</style>`)
+        .join('\n');
 
-            const extraJs = files.value
-                .filter(f => f.name.endsWith('.js') && f.name !== 'tailwind.js')
-                .map(f => `<script>${f.content.replace(/<\/script>/g, '<\\/script>')}<\/script>`)
-                .join('\n');
+    // Verzamel alle EXTRA JS bestanden (behalve tailwind.js)
+    const extraJs = files.value
+        .filter(f => f.name.endsWith('.js') && f.name !== 'tailwind.js')
+        .map(f => `<script>${f.content.replace(/<\/script>/g, '<\\/script>')}<\/script>`)
+        .join('\n');
 
-            const completeHtml = `<!DOCTYPE html>
+    // We laden Tailwind CDN alleen als er een tailwind.js configuratie is
+    // Of we laden hem standaard voor het gemak:
+    const tailwindScript = tailwindConfig 
+        ? `<script src="https://cdn.tailwindcss.com"></script><script>${tailwindConfig}<\/script>` 
+        : `<script src="https://cdn.tailwindcss.com"></script>`;
+
+    const completeHtml = `<!DOCTYPE html>
 <html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>${tailwindConfig.replace(/<\/script>/g, '<\\/script>')}<\/script>
+    ${tailwindScript}
     <style>
         body { background-color: white; color: black; margin: 0; padding: 0; } 
         ${css}
@@ -333,12 +332,9 @@ createApp({
 </body>
 </html>`;
 
-            // 2. Verwijder de SRC (de URL) zodat srcdoc weer zichtbaar wordt
-            iframe.removeAttribute('src');
-
-            // 3. Injecteer de live-editor code
-            iframe.srcdoc = completeHtml;
-        };
+    iframe.removeAttribute('src');
+    iframe.srcdoc = completeHtml;
+};
         const setViewMode = (mode) => {
             viewMode.value = mode;
             if (mode !== 'preview') {
