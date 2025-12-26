@@ -33,6 +33,7 @@
         <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/addon/lint/css-lint.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jshint/2.13.6/jshint.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/csslint/1.0.5/csslint.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
 
         <script src="tailwind.js"></script>
         <link rel="stylesheet" href="styles.css">
@@ -61,6 +62,13 @@
                     <button v-if="projectActive" @click="toggleSymbolList" :class="showSymbolList ? 'bg-primary text-white shadow-lg shadow-primary/20 border-primary' : 'bg-gray-800/50 text-gray-500 hover:text-white border-gray-700 hover:bg-gray-700'" class="absolute top-6 right-6 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 border focus:outline-none" :title="showSymbolList ? 'Terug naar projecten' : 'Toon functies in dit bestand'">
                         <i class="fas text-xs" :class="showSymbolList ? 'fa-folder-tree' : 'fa-list-ul'"></i>
                     </button>
+                    <button v-if="projectActive" 
+        @click="toggleDiffMode" 
+        :class="showDiff ? 'bg-orange-500 text-white border-orange-400 shadow-lg shadow-orange-500/20' : 'bg-gray-800/50 text-gray-500 hover:text-white border-gray-700'"
+        class="absolute top-6 right-16 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 border focus:outline-none"
+        title="Wijzigingen tonen (Diff Mode)">
+    <i class="fas text-xs" :class="showDiff ? 'fa-eye' : 'fa-code-compare'"></i>
+</button>
                 </div>
 
 

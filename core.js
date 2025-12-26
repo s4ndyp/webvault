@@ -105,9 +105,11 @@ createApp({
         const currentMatchIndex = ref(0);
         const showSymbolList = ref(false);
         const symbols = ref([]);
-        let originalContent = ""; // Dit wordt ons "nulpunt"
+        const showDiff = ref(false);
+        let diffWidgets = []; // Om de rode 'verwijderd' blokjes bij te houden
+                     let originalContent = ""; // Dit wordt ons "nulpunt"
 
-const toggleSymbolList = () => {
+        const toggleSymbolList = () => {
             if (!activeFile.value || !editorInstance) return;
 
             const content = editorInstance.getValue();
@@ -134,11 +136,17 @@ const toggleSymbolList = () => {
 
         const jumpToSymbol = (line) => {
             if (!editorInstance) return;
-            editorInstance.setCursor(line, 0); // Fix: editorInstance i.p.v. editor
+
+            // Verplaats de cursor naar de juiste regel
+            editorInstance.setCursor(line, 0);
             editorInstance.focus();
-            // Laat de regel even oplichten
+
+            // Markeer de regel heel even met een selectie zodat de gebruiker ziet waar hij is
             editorInstance.setSelection({ line: line, ch: 0 }, { line: line + 1, ch: 0 });
-            showSymbolList.value = false;
+
+            // We halen showSymbolList.value = false; hier weg. 
+            // De lijst blijft dus gewoon staan in de zijbalk!
+            console.log(`[Navigation] Sprong naar regel ${line + 1}`);
         };
 
         const toggleFileHistory = (tab) => {
@@ -211,48 +219,32 @@ const toggleSymbolList = () => {
                 }
             });
 
-if (editorInstance) {
-            editorInstance.on('change', (cm) => {
-                if (!activeFileName.value || !activeFile.value) return;
+            if (editorInstance) {
+                editorInstance.on('change', (cm) => {
+                    if (!activeFileName.value || !activeFile.value) return;
 
-                const currentVal = cm.getValue();
-                const file = files.value.find(f => f.name === activeFileName.value);
+                    const currentVal = cm.getValue();
+                    const file = files.value.find(f => f.name === activeFileName.value);
 
-                if (file) {
-                    // --- 1. GREEN HIGHLIGHT LOGICA (Vergelijking met nulpunt) ---
-                    const currentLines = currentVal.split('\n');
-                    const origLines = originalContent.split('\n');
-
-                    // Operation zorgt ervoor dat de editor niet knippert bij veel regels
-                    editorInstance.operation(() => {
-                        for (let i = 0; i < editorInstance.lineCount(); i++) {
-                            // Vergelijk de huidige regel met de regel uit originalContent
-                            if (currentLines[i] !== origLines[i]) {
-                                editorInstance.addLineClass(i, "background", "line-changed-highlight");
-                            } else {
-                                editorInstance.removeLineClass(i, "background", "line-changed-highlight");
-                            }
+                    if (file) {
+                        // Als Diff Mode aan staat, herbereken de highlights
+                        if (showDiff.value) {
+                            renderDiff();
                         }
-                    });
 
-                    // --- 2. SAVE-KNOP LOGICA (Vergelijking met laatst opgeslagen) ---
-                    if (file.savedContent === undefined) {
-                        file.savedContent = file.content;
+                        // Save-knop logica (bestaand)
+                        if (file.savedContent === undefined) file.savedContent = file.content;
+                        if (currentVal !== file.savedContent) {
+                            file.content = currentVal;
+                            dirtyFiles.value.add(activeFileName.value);
+                        } else {
+                            dirtyFiles.value.delete(activeFileName.value);
+                        }
+                        updatePreview();
                     }
-
-                    if (currentVal !== file.savedContent) {
-                        file.content = currentVal;
-                        dirtyFiles.value.add(activeFileName.value);
-                    } else {
-                        dirtyFiles.value.delete(activeFileName.value);
-                    }
-                    
-                    updatePreview();
-                }
-            }); // Einde on('change')
-        } // Einde if(editorInstance)
+                });
+            } // Einde if(editorInstance)
         };
-
         const updateEditorMode = (filename) => {
             if (!editorInstance) return;
             let mode = 'htmlmixed';
@@ -391,13 +383,21 @@ if (editorInstance) {
             // Direct opslaan in de database
             await updateProjectInDB();
 
+            // Als de editor open is voor dit bestand, resetten we de weergave
             if (editorInstance && activeFileName.value === fileName) {
                 editorInstance.clearHistory();
+
+                // 1. Het nieuwe nulpunt instellen (vergelijken met wat we nú hebben)
+                originalContent = editorInstance.getValue();
+
+                // 2. Alle kleuren en rode widgets wissen
+                clearDiff();
+
+                // 3. Als Diff Mode aan stond, herberekenen (geeft nu 0 verschillen)
+                if (showDiff.value) {
+                    renderDiff();
+                }
             }
-originalContent = editorInstance.getValue();
-for (let i = 0; i < editorInstance.lineCount(); i++) {
-    editorInstance.removeLineClass(i, "background", "line-changed-highlight");
-}
             showToast(`${fileName} opgeslagen als v${currentVersion.value}.${file.subVersion - 1}`, 'success');
         };
 
@@ -847,6 +847,65 @@ for (let i = 0; i < editorInstance.lineCount(); i++) {
             }
         }; // Sluit de functie af
 
+        const clearDiff = () => {
+            if (!editorInstance) return;
+            // Verwijder groene regels
+            for (let i = 0; i < editorInstance.lineCount(); i++) {
+                editorInstance.removeLineClass(i, "background", "line-added-highlight");
+            }
+            // Verwijder rode blokjes (widgets)
+            diffWidgets.forEach(w => w.clear());
+            diffWidgets = [];
+        };
+
+        const renderDiff = () => {
+            if (!editorInstance || !showDiff.value) return;
+
+            clearDiff();
+            const currentVal = editorInstance.getValue();
+
+            // Gebruik de Diff library om regels te vergelijken
+            const diff = Diff.diffLines(originalContent, currentVal);
+
+            let currentLine = 0;
+
+            editorInstance.operation(() => {
+                diff.forEach(part => {
+                    if (part.added) {
+                        // Markeer toegevoegde regels (groen)
+                        for (let i = 0; i < part.count; i++) {
+                            editorInstance.addLineClass(currentLine + i, "background", "line-added-highlight");
+                        }
+                        currentLine += part.count;
+                    } else if (part.removed) {
+                        // Toon verwijderde regels (rood) als een widget
+                        const widgetNode = document.createElement("div");
+                        widgetNode.className = "diff-removed-widget";
+                        widgetNode.innerText = part.value.replace(/\n$/, "");
+
+                        // Voeg het rode blokje in boven de huidige regel
+                        const widget = editorInstance.addLineWidget(currentLine, widgetNode, {
+                            above: true,
+                            noHScroll: true
+                        });
+                        diffWidgets.push(widget);
+                    } else {
+                        // Geen wijziging, gewoon doortellen
+                        currentLine += part.count;
+                    }
+                });
+            });
+        };
+
+        const toggleDiffMode = () => {
+            showDiff.value = !showDiff.value;
+            if (showDiff.value) {
+                renderDiff();
+            } else {
+                clearDiff();
+            }
+        };
+
         // --- GEWIJZIGDE FUNCTIE: openProject ---
         const openProject = async (projectId, projectName) => {
             if (!manager) return;
@@ -998,535 +1057,548 @@ for (let i = 0; i < editorInstance.lineCount(); i++) {
                 showToast('Fout bij opslaan!', 'error');
             }
         };
-  const createBackup = async (isAuto = false) => {
-    isLoading.value = true;
-    try {
-        // 1. Maak de snapshot van de huidige staat
-        const snapshot = JSON.parse(JSON.stringify(files.value));
-
-        // 2. DOORTEL-LOGICA: Zoek het hoogste nummer ooit gebruikt in de geschiedenis
-        const highestInHistory = history.value.length > 0 ?
-            Math.max(...history.value.map(h => h.version)) :
-            currentVersion.value;
-
-        // 3. Maak het backup-record van de huidige werkversie
-        const backupRecord = {
-            version: currentVersion.value,
-            note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Project Backup'),
-            timestamp: new Date().toLocaleTimeString('nl-NL', {
-                hour: '2-digit',
-                minute: '2-digit'
-            }),
-            files: snapshot
-        };
-
-        // Reset de 'hersteld' indicators voor de UI
-        lastRestoredVersion.value = null;
-        saveNote.value = ''; 
-
-        files.value.forEach(f => {
-            f.activeSubVersion = null;
-        });
-
-        // 4. Voeg toe aan geschiedenis
-        history.value.unshift(backupRecord);
-
-        // 5. BEPAAL DE VOLGENDE VERSIE
-        const nextVer = Math.max(currentVersion.value, highestInHistory) + 1;
-        currentVersion.value = nextVer;
-        highestVersion.value = nextVer; 
-
-        // 6. Reset bestanden voor de nieuwe hoofdversie
-        files.value.forEach(f => {
-            f.subVersion = 0;
-        });
-
-        if (dirtyFiles.value) {
-            dirtyFiles.value.clear();
-        }
-
-        // 7. Reset de tijdelijke variabelen
-        saveNote.value = '';
-        lastRestoredVersion.value = null;
-
-        // 8. Opslaan in database
-        await updateProjectInDB();
-
-        // ============================================================
-        // NIEUW: RESET DE GROENE HIGHLIGHTS (HET NULPUNT)
-        // ============================================================
-        if (editorInstance) {
-            // De huidige inhoud is nu ons nieuwe 'nulpunt'
-            originalContent = editorInstance.getValue();
-            
-            // Verwijder alle groene markeringen van de regels
-            for (let i = 0; i < editorInstance.lineCount(); i++) {
-                editorInstance.removeLineClass(i, "background", "line-changed-highlight");
-            }
-            console.log(`[Highlight] Backup succesvol: nulpunt gereset naar v${backupRecord.version}`);
-        }
-        // ============================================================
-
-        if (!isAuto) {
-            showToast(`v${backupRecord.version} opgeslagen. Nieuwe werkversie: v${currentVersion.value}`, 'success');
-        }
-
-    } catch (error) {
-        console.error("Backup fout:", error);
-        showToast("Fout bij maken backup", "error");
-    } finally {
-        isLoading.value = false;
-    }
-};
-
-        // --- NIEUWE STATE ---
-        const openTabs = ref([]); // Houdt bij welke bestanden open staan als tabbladen      
-
-        // --- NIEUWE FUNCTIE: closeTab ---
-        const closeTab = (name) => {
-            openTabs.value = openTabs.value.filter(t => t !== name);
-            // Als we het actieve tabblad sluiten, kies een andere of zet op null
-            if (activeFileName.value === name) {
-                activeFileName.value = openTabs.value.length > 0 ? openTabs.value[0] : null;
-            }
-        };
-
-        const createNewFile = async () => {
-            if (!newFileName.value) return;
-
-            // Check of bestand al bestaat
-            const exists = files.value.some(f => f.name.toLowerCase() === newFileName.value.toLowerCase());
-            if (exists) {
-                showToast('Bestand bestaat al!', 'error');
-                return;
-            }
-
-            // Maak het nieuwe bestandsobject aan
-            const newFile = {
-                name: newFileName.value,
-                content: '',
-                subVersion: 0,
-                fileHistory: [],
-                lastModified: Date.now()
-            };
-
-            // Voeg toe aan de project bestanden
-            files.value.push(newFile);
-
-            // Voeg toe aan de open tabbladen en maak actief
-            if (!openTabs.value.includes(newFileName.value)) {
-                openTabs.value.push(newFileName.value);
-            }
-            setActiveFile(newFileName.value);
-
-            // Reset en sluit modal
-            showNewFileModal.value = false;
-            newFileName.value = '';
-
-            // Sla direct op in de database
-            await updateProjectInDB();
-            showToast(`${newFile.name} aangemaakt`, 'success');
-        };
-
-        // NIEUWE FUNCTIE (COMPLETE REPLACEMENT):
-        const checkServerStatus = async () => {
-            try {
-                // 1. Haal de data op
-                const res = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`);
-                if (!res.ok) return;
-                const data = await res.json();
-
-                // 2. Update de status (lampje) - doe dit alleen als het echt veranderd is
-                if (publishStatus.value !== data.status) {
-                    console.log("[Status] UI Update naar:", data.status);
-                    publishStatus.value = data.status;
-                }
-
-                // 3. Iframe beheer - BUITEN de Vue reactivity als het kan
-                if (data.status === 'Running') {
-                    const iframe = document.getElementById('preview-iframe');
-                    if (iframe) {
-                        const host = window.location.hostname;
-                        const targetSrc = `http://${host}:8080/?t=${Date.now()}`;
-
-                        // CRUCIAAL: Alleen de src aanpassen als de poort nog niet 8080 is
-                        // Dit voorkomt de oneindige lus en het vastlopen
-                        if (!iframe.src.includes(':8080')) {
-                            console.log("[Status] Iframe veilig overzetten naar poort 8080");
-                            iframe.removeAttribute('srcdoc');
-                            iframe.src = targetSrc;
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn("[Status] Check hapering...");
-            }
-        };
-
-        const publishProject = async (project, backup) => {
-            isLoading.value = true;
-            // Direct de modal sluiten zodat de gebruiker weer verder kan
-            showPublishModal.value = false;
-
-            try {
-                const response = await fetch(`${SERVER_API}/api/publish`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        projectId: project._id,
-                        version: backup.version,
-                        files: backup.files
-                    })
-                });
-
-                if (!response.ok) throw new Error('Publicatie server fout');
-
-                const result = await response.json();
-
-                if (result.success) {
-                    publishStatus.value = 'Running';
-
-                    const iframe = document.querySelector('iframe');
-                    if (iframe) {
-                        iframe.removeAttribute('srcdoc');
-                        iframe.src = `http://${window.location.hostname}:8080?v=${backup.version}&t=${Date.now()}`;
-                    }
-                    showToast(result.message, 'success');
-                }
-            } catch (e) {
-                console.error("Publish fout:", e);
-                showToast("Publicatie mislukt: " + e.message, "error");
-                // Bij fout de status checken om te zien wat de server doet
-                await checkServerStatus();
-            } finally {
-                isLoading.value = false;
-            }
-        };
-
-        const stopServer = async () => {
-            try {
-                // Direct visueel op 'Stopping' zetten
-                publishStatus.value = 'Stopping...';
-
-                const response = await fetch(`${SERVER_API}/api/stop-server`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-
-                if (response.ok) {
-                    // FORCEER de status op Stopped
-                    publishStatus.value = 'Stopped';
-                    showToast('Server succesvol gestopt', 'info');
-
-                    // Optioneel: Update de lokale manager cache direct zodat de interval 
-                    // niet een oude status ophaalt
-                    if (manager) {
-                        await manager.updateCache('serverStatus', { status: 'Stopped' });
-                    }
-                }
-            } catch (err) {
-                console.error('Fout bij stoppen server:', err);
-                showToast('Kon server niet stoppen', 'error');
-                // Bij fout halen we de echte status weer op
-                checkServerStatus();
-            }
-        };
-
-        // --- GEWIJZIGDE FUNCTIE: setActiveFile ---
-const setActiveFile = (name) => {
-            if (!name) return;
-
-            // 1. Tabblad beheer (bestaande logica)
-            if (!openTabs.value.includes(name)) {
-                openTabs.value.push(name);
-            }
-            activeFileName.value = name;
-
-            // 2. Nulpunt instellen voor de groene highlight
-            const file = files.value.find(f => f.name === name);
-            if (file) {
-                // We gebruiken nextTick om te wachten tot Vue de editor 
-                // daadwerkelijk heeft gevuld met de tekst van het nieuwe bestand.
-                nextTick(() => {
-                    if (editorInstance) {
-                        // Sla de huidige inhoud op als het 'origineel'
-                        originalContent = editorInstance.getValue();
-                        
-                        // Wis alle groene markeringen van het vorige bestand 
-                        // zodat we met een schone lei beginnen.
-                        for (let i = 0; i < editorInstance.lineCount(); i++) {
-                            editorInstance.removeLineClass(i, "background", "line-changed-highlight");
-                        }
-                        
-                        console.log(`[Highlight] Nulpunt ingesteld voor: ${name}`);
-                    }
-                });
-            }
-        };
-        const activeFile = computed(() => files.value.find(f => f.name === activeFileName.value));
-
-        watch(activeFile.value?.content, (newContent, oldContent) => {
-            if (activeFile.value && newContent !== oldContent) {
-                activeFile.value.lastModified = Date.now();
-            }
-        });
-
-        watch(showNewProjectModal, (val) => {
-            if (val) {
-                nextTick(() => projectNameInput.value?.focus());
-            }
-        });
-
-        let timerInterval;
-        onUnmounted(() => {
-            if (timerInterval) clearInterval(timerInterval);
-        });
-
-        const pasteFromClipboard = async () => {
-            try {
-                const text = await navigator.clipboard.readText();
-                if (editorInstance) {
-                    const doc = editorInstance.getDoc();
-                    const cursor = doc.getCursor();
-                    doc.replaceRange(text, cursor);
-                    showToast('Code geplakt!', 'success');
-                }
-            } catch (err) {
-                alert('Kon niet plakken. Gebruik CTRL+V / CMD+V.');
-            }
-        };
-
-        const copyContent = () => {
-            if (activeFile.value) {
-                navigator.clipboard.writeText(activeFile.value.content);
-                showToast('Gekopieerd!', 'success');
-            }
-        };
-
-        const clearContent = () => {
-            if (!activeFile.value) return;
-            if (confirm(`Weet je zeker dat je ${activeFile.value.name} leeg wilt maken?`)) {
-                activeFile.value.content = '';
-                if (editorInstance) editorInstance.setValue('');
-                activeFile.value.lastModified = Date.now();
-                showToast('Inhoud gewist');
-            }
-        };
-
-        const publishCurrentState = async () => {
+        const createBackup = async (isAuto = false) => {
             isLoading.value = true;
             try {
-                // We pakken de huidige files direct uit de editor (met de laatste wijzigingen)
-                const currentFiles = JSON.parse(JSON.stringify(files.value));
+                // 1. Maak de snapshot van de huidige staat
+                const snapshot = JSON.parse(JSON.stringify(files.value));
 
-                const response = await fetch(`${PUBLISH_API}/api/publish`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        projectId: currentProjectId.value,
-                        version: "Experiment", // Speciale marker voor de server
-                        note: "Niet-opgeslagen wijzigingen (Live Experiment)",
-                        files: currentFiles
-                    })
-                });
+                // 2. DOORTEL-LOGICA: Zoek het hoogste nummer ooit gebruikt in de geschiedenis
+                const highestInHistory = history.value.length > 0 ?
+                    Math.max(...history.value.map(h => h.version)) :
+                    currentVersion.value;
 
-                const result = await response.json();
-                if (result.success) {
-                    publishStatus.value = 'Running';
-                    showPublishModal.value = false;
+                // 3. Maak het backup-record van de huidige werkversie
+                const backupRecord = {
+                    version: currentVersion.value,
+                    note: saveNote.value || (lastRestoredVersion.value ? `Herstart vanaf v${lastRestoredVersion.value}` : 'Project Backup'),
+                    timestamp: new Date().toLocaleTimeString('nl-NL', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }),
+                    files: snapshot
+                };
 
-                    const iframe = document.querySelector('iframe');
-                    if (iframe) {
-                        iframe.removeAttribute('srcdoc');
-                        iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
-                    }
-                    showToast("Experiment gestart op poort 8080", "success");
-                }
-            } catch (e) {
-                showToast("Experiment mislukt", "error");
-            } finally {
-                isLoading.value = false;
-            }
-        };
-        // --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
-        const restoreVersion = async (backup) => {
-            if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
-                // 1. Markeer herkomst voor de UI
-                lastRestoredVersion.value = backup.version;
-                saveNote.value = `Herstart vanaf v${backup.version}`;
+                // Reset de 'hersteld' indicators voor de UI
+                lastRestoredVersion.value = null;
+                saveNote.value = '';
 
-                // 2. Bestanden overschrijven
-                files.value = JSON.parse(JSON.stringify(backup.files));
-
-                // 3. WATERDICHTE VERSIELOGICA:
-                // We kijken naar: 
-                // - Alle versienummers in de geschiedenis
-                // - Én het nummer van de versie waar we net in werkten (currentVersion)
-                // - Én het nummer van de backup die we nu herstellen
-                const versionsInHistory = history.value.map(h => h.version);
-                const maxVersionEver = Math.max(0, ...versionsInHistory, currentVersion.value, backup.version);
-
-                // De nieuwe reeks krijgt ALTIJD het hoogste nummer ooit + 1
-                const nextMainVersion = maxVersionEver + 1;
-
-                currentVersion.value = nextMainVersion;
-                highestVersion.value = nextMainVersion;
-
-                // 4. RESET sub-versies: De bestanden beginnen in de nieuwe reeks weer bij .0
                 files.value.forEach(f => {
-                    f.subVersion = 0;
                     f.activeSubVersion = null;
                 });
 
-                await nextTick();
-                if (activeFileName.value) {
-                    const currentFile = files.value.find(f => f.name === activeFileName.value);
-                    if (currentFile && editorInstance) {
-                        editorInstance.setValue(currentFile.content);
-                        editorInstance.clearHistory();
-                    }
+                // 4. Voeg toe aan geschiedenis
+                history.value.unshift(backupRecord);
+
+                // 5. BEPAAL DE VOLGENDE VERSIE
+                const nextVer = Math.max(currentVersion.value, highestInHistory) + 1;
+                currentVersion.value = nextVer;
+                highestVersion.value = nextVer;
+
+                // 6. Reset bestanden voor de nieuwe hoofdversie
+                files.value.forEach(f => {
+                    f.subVersion = 0;
+                });
+
+                if (dirtyFiles.value) {
+                    dirtyFiles.value.clear();
                 }
 
-                updatePreview();
+                // 7. Reset de tijdelijke variabelen
+                saveNote.value = '';
+                lastRestoredVersion.value = null;
+
+                // 8. Opslaan in database
                 await updateProjectInDB();
 
-                showToast(`Versie ${backup.version} hersteld als basis voor v${nextMainVersion}.0`, 'success');
-                expandedProjectId.value = null;
+                // ============================================================
+                // UPDATE: Nulpunt resetten voor de nieuwe Diff Mode
+                // ============================================================
+                if (editorInstance) {
+                    // 1. De huidige inhoud is vanaf nu ons nieuwe 'origineel'
+                    originalContent = editorInstance.getValue();
+
+                    // 2. Verwijder alle markeringen (Groene regels EN rode widgets)
+                    // We gebruiken de nieuwe clearDiff() functie die we hiervoor hebben gemaakt
+                    clearDiff();
+
+                    // 3. Als de gebruiker de Diff-mode aan heeft staan, direct verversen
+                    // (Er zal nu geen kleur te zien zijn omdat alles gelijk is aan het nulpunt)
+                    if (showDiff.value) {
+                        renderDiff();
+                    }
+
+                    console.log(`[Diff] Nulpunt gereset naar v${backupRecord.version}`);
+                }
+          
+            // ============================================================  
+
+            if (!isAuto) {
+                showToast(`v${backupRecord.version} opgeslagen. Nieuwe werkversie: v${currentVersion.value}`, 'success');
             }
-        };
-        const deleteBackup = async (version) => {
-            if (!confirm(`Backup v${version} verwijderen?`)) return;
-            history.value = history.value.filter(h => h.version !== version);
-            await saveToCloud(true);
-            showToast(`Backup v${version} verwijderd`);
+
+        } catch (error) {
+            console.error("Backup fout:", error);
+            showToast("Fout bij maken backup", "error");
+        } finally {
+            isLoading.value = false;
+        }
+    };
+
+    // --- NIEUWE STATE ---
+    const openTabs = ref([]); // Houdt bij welke bestanden open staan als tabbladen      
+
+    // --- NIEUWE FUNCTIE: closeTab ---
+    const closeTab = (name) => {
+        openTabs.value = openTabs.value.filter(t => t !== name);
+        // Als we het actieve tabblad sluiten, kies een andere of zet op null
+        if (activeFileName.value === name) {
+            activeFileName.value = openTabs.value.length > 0 ? openTabs.value[0] : null;
+        }
+    };
+
+    const createNewFile = async () => {
+        if (!newFileName.value) return;
+
+        // Check of bestand al bestaat
+        const exists = files.value.some(f => f.name.toLowerCase() === newFileName.value.toLowerCase());
+        if (exists) {
+            showToast('Bestand bestaat al!', 'error');
+            return;
+        }
+
+        // Maak het nieuwe bestandsobject aan
+        const newFile = {
+            name: newFileName.value,
+            content: '',
+            subVersion: 0,
+            fileHistory: [],
+            lastModified: Date.now()
         };
 
-        const downloadZip = async () => {
-            const zip = new JSZip();
-            files.value.forEach(file => {
-                zip.file(file.name, file.content);
+        // Voeg toe aan de project bestanden
+        files.value.push(newFile);
+
+        // Voeg toe aan de open tabbladen en maak actief
+        if (!openTabs.value.includes(newFileName.value)) {
+            openTabs.value.push(newFileName.value);
+        }
+        setActiveFile(newFileName.value);
+
+        // Reset en sluit modal
+        showNewFileModal.value = false;
+        newFileName.value = '';
+
+        // Sla direct op in de database
+        await updateProjectInDB();
+        showToast(`${newFile.name} aangemaakt`, 'success');
+    };
+
+    // NIEUWE FUNCTIE (COMPLETE REPLACEMENT):
+    const checkServerStatus = async () => {
+        try {
+            // 1. Haal de data op
+            const res = await fetch(`${SERVER_API}/api/server-status?t=${Date.now()}`);
+            if (!res.ok) return;
+            const data = await res.json();
+
+            // 2. Update de status (lampje) - doe dit alleen als het echt veranderd is
+            if (publishStatus.value !== data.status) {
+                console.log("[Status] UI Update naar:", data.status);
+                publishStatus.value = data.status;
+            }
+
+            // 3. Iframe beheer - BUITEN de Vue reactivity als het kan
+            if (data.status === 'Running') {
+                const iframe = document.getElementById('preview-iframe');
+                if (iframe) {
+                    const host = window.location.hostname;
+                    const targetSrc = `http://${host}:8080/?t=${Date.now()}`;
+
+                    // CRUCIAAL: Alleen de src aanpassen als de poort nog niet 8080 is
+                    // Dit voorkomt de oneindige lus en het vastlopen
+                    if (!iframe.src.includes(':8080')) {
+                        console.log("[Status] Iframe veilig overzetten naar poort 8080");
+                        iframe.removeAttribute('srcdoc');
+                        iframe.src = targetSrc;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[Status] Check hapering...");
+        }
+    };
+
+    const publishProject = async (project, backup) => {
+        isLoading.value = true;
+        // Direct de modal sluiten zodat de gebruiker weer verder kan
+        showPublishModal.value = false;
+
+        try {
+            const response = await fetch(`${SERVER_API}/api/publish`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    projectId: project._id,
+                    version: backup.version,
+                    files: backup.files
+                })
             });
-            const fileName = `${currentProjectName.value.replace(/\s+/g, '_')}_v${currentVersion.value}.zip`;
-            zip.generateAsync({ type: 'blob' }).then(function(content) {
-                saveAs(content, fileName);
-                showToast('ZIP gedownload', 'success');
+
+            if (!response.ok) throw new Error('Publicatie server fout');
+
+            const result = await response.json();
+
+            if (result.success) {
+                publishStatus.value = 'Running';
+
+                const iframe = document.querySelector('iframe');
+                if (iframe) {
+                    iframe.removeAttribute('srcdoc');
+                    iframe.src = `http://${window.location.hostname}:8080?v=${backup.version}&t=${Date.now()}`;
+                }
+                showToast(result.message, 'success');
+            }
+        } catch (e) {
+            console.error("Publish fout:", e);
+            showToast("Publicatie mislukt: " + e.message, "error");
+            // Bij fout de status checken om te zien wat de server doet
+            await checkServerStatus();
+        } finally {
+            isLoading.value = false;
+        }
+    };
+
+    const stopServer = async () => {
+        try {
+            // Direct visueel op 'Stopping' zetten
+            publishStatus.value = 'Stopping...';
+
+            const response = await fetch(`${SERVER_API}/api/stop-server`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
             });
-        };
 
-        const getFileIcon = (filename) => {
-            if (filename.endsWith('.html')) return 'fas fa-globe text-orange-500';
-            if (filename.endsWith('.css')) return 'fab fa-css3-alt text-blue-500';
-            if (filename.endsWith('.js')) return 'fab fa-js text-yellow-400';
-            return 'fas fa-file text-gray-400';
-        };
+            if (response.ok) {
+                // FORCEER de status op Stopped
+                publishStatus.value = 'Stopped';
+                showToast('Server succesvol gestopt', 'info');
 
-        const formatTimeAgo = (timestamp) => {
-            if (!timestamp) return '';
-            const now = currentTime.value;
-            const diff = now - timestamp;
-            const minutes = Math.floor(diff / 60000);
-            const hours = Math.floor(diff / 3600000);
-            const days = Math.floor(diff / 86400000);
+                // Optioneel: Update de lokale manager cache direct zodat de interval 
+                // niet een oude status ophaalt
+                if (manager) {
+                    await manager.updateCache('serverStatus', { status: 'Stopped' });
+                }
+            }
+        } catch (err) {
+            console.error('Fout bij stoppen server:', err);
+            showToast('Kon server niet stoppen', 'error');
+            // Bij fout halen we de echte status weer op
+            checkServerStatus();
+        }
+    };
 
-            if (diff < 60000) return 'zojuist';
-            if (minutes < 60) return `${minutes} min`;
-            if (hours < 24) return `${hours} uur`;
-            return `${days} dagen`;
-        };
+    // --- GEWIJZIGDE FUNCTIE: setActiveFile ---
+    const setActiveFile = (name) => {
+        if (!name) return;
 
-        const showToast = (msg, type = 'normal') => {
-            savedMessage.value = msg;
-            setTimeout(() => {
-                savedMessage.value = '';
-            }, 3000);
-        };
+        // 1. Tabblad beheer (bestaande logica)
+        if (!openTabs.value.includes(name)) {
+            openTabs.value.push(name);
+        }
+        activeFileName.value = name;
 
-        return {
-            isLoading,
-            showNewProjectModal,
-            newProjectName,
-            projectNameInput,
-            createProject,
-            openProject,
-            closeProject,
-            deleteProject,
-            currentProjectName,
-            projectActive,
-            currentVersion,
-            highestVersion,
-            files,
-            activeFileName,
-            activeFile,
-            history,
-            showHistoryModal,
-            showMobileMenu,
-            savedMessage,
-            setActiveFile,
-            pasteFromClipboard,
-            copyContent,
-            clearContent,
-            createBackup,
-            restoreVersion,
-            deleteBackup,
-            downloadZip,
-            getFileIcon,
-            formatTimeAgo,
-            fileInput,
-            triggerUpload,
-            handleFileUpload,
-            viewMode,
-            setViewMode,
-            previewContent,
-            insertVersionComment,
-            editorContainer,
-            projectList,
-            refreshProjectList,
-            clientId,
-            openTabs,
-           
-            closeTab,
-            expandedProjectId,
-            toggleVersions,
-            dirtyFiles,
-            getFileVersion,
-            saveSingleFile,
-            activeFileHistoryTab,
-            toggleFileHistory,
-            restoreFileSubVersion,
-            deleteProjectBackup,
-            deleteFileHistoryItem,
-            saveNote,
-            lastRestoredVersion,
-            showNewFileModal,
-            newFileName,
-            createNewFile,
-            searchQuery,
-            replaceQuery,
-            searchMatches,
-            undo,
-            redo,
-            findNext,
-            replaceAll,
-            showPublishModal,
-            publishStatus,
-            publishProject,
-            stopServer,
-            downloadSingleFileZip,
-            isRefreshing,
-            forcePreviewRefresh,
-            publishCurrentState,
-            resetProjectHistory,
-            findPrev,
-            totalMatches,
-            currentMatchIndex,
-            updateMatchCounters,
-            beautifyCode,
-            hostname,
-            showSymbolList,
-    symbols,
-    toggleSymbolList,
-    jumpToSymbol,
-            apiUrl
-        };
-    }
+        // 2. Nulpunt instellen voor de Diff Mode
+        const file = files.value.find(f => f.name === name);
+        if (file) {
+            // We gebruiken nextTick om te wachten tot Vue de editor 
+            // daadwerkelijk heeft gevuld met de tekst van het nieuwe bestand.
+            nextTick(() => {
+                if (editorInstance) {
+                    // Sla de inhoud van het NIEUWE bestand op als het 'origineel'
+                    originalContent = editorInstance.getValue();
+
+                    // Wis alle markeringen (groen en rode widgets) van het vorige bestand
+                    clearDiff();
+
+                    // Als Diff Mode aan staat, bereken direct de verschillen voor dit bestand
+                    if (showDiff.value) {
+                        renderDiff();
+                    }
+
+                    console.log(`[Diff] Nulpunt ingesteld voor nieuw bestand: ${name}`);
+                }
+            });
+        }
+
+    };
+    const activeFile = computed(() => files.value.find(f => f.name === activeFileName.value));
+
+    watch(activeFile.value?.content, (newContent, oldContent) => {
+        if (activeFile.value && newContent !== oldContent) {
+            activeFile.value.lastModified = Date.now();
+        }
+    });
+
+    watch(showNewProjectModal, (val) => {
+        if (val) {
+            nextTick(() => projectNameInput.value?.focus());
+        }
+    });
+
+    let timerInterval;
+    onUnmounted(() => {
+        if (timerInterval) clearInterval(timerInterval);
+    });
+
+    const pasteFromClipboard = async () => {
+        try {
+            const text = await navigator.clipboard.readText();
+            if (editorInstance) {
+                const doc = editorInstance.getDoc();
+                const cursor = doc.getCursor();
+                doc.replaceRange(text, cursor);
+                showToast('Code geplakt!', 'success');
+            }
+        } catch (err) {
+            alert('Kon niet plakken. Gebruik CTRL+V / CMD+V.');
+        }
+    };
+
+    const copyContent = () => {
+        if (activeFile.value) {
+            navigator.clipboard.writeText(activeFile.value.content);
+            showToast('Gekopieerd!', 'success');
+        }
+    };
+
+    const clearContent = () => {
+        if (!activeFile.value) return;
+        if (confirm(`Weet je zeker dat je ${activeFile.value.name} leeg wilt maken?`)) {
+            activeFile.value.content = '';
+            if (editorInstance) editorInstance.setValue('');
+            activeFile.value.lastModified = Date.now();
+            showToast('Inhoud gewist');
+        }
+    };
+
+    const publishCurrentState = async () => {
+        isLoading.value = true;
+        try {
+            // We pakken de huidige files direct uit de editor (met de laatste wijzigingen)
+            const currentFiles = JSON.parse(JSON.stringify(files.value));
+
+            const response = await fetch(`${PUBLISH_API}/api/publish`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    projectId: currentProjectId.value,
+                    version: "Experiment", // Speciale marker voor de server
+                    note: "Niet-opgeslagen wijzigingen (Live Experiment)",
+                    files: currentFiles
+                })
+            });
+
+            const result = await response.json();
+            if (result.success) {
+                publishStatus.value = 'Running';
+                showPublishModal.value = false;
+
+                const iframe = document.querySelector('iframe');
+                if (iframe) {
+                    iframe.removeAttribute('srcdoc');
+                    iframe.src = `http://${window.location.hostname}:8080?t=${Date.now()}`;
+                }
+                showToast("Experiment gestart op poort 8080", "success");
+            }
+        } catch (e) {
+            showToast("Experiment mislukt", "error");
+        } finally {
+            isLoading.value = false;
+        }
+    };
+    // --- VERVANG DE BESTAANDE restoreVersion FUNCTIE ---
+    const restoreVersion = async (backup) => {
+        if (confirm(`Weet je zeker dat je projectversie ${backup.version} wilt herstellen?`)) {
+            // 1. Markeer herkomst voor de UI
+            lastRestoredVersion.value = backup.version;
+            saveNote.value = `Herstart vanaf v${backup.version}`;
+
+            // 2. Bestanden overschrijven
+            files.value = JSON.parse(JSON.stringify(backup.files));
+
+            // 3. WATERDICHTE VERSIELOGICA:
+            // We kijken naar: 
+            // - Alle versienummers in de geschiedenis
+            // - Én het nummer van de versie waar we net in werkten (currentVersion)
+            // - Én het nummer van de backup die we nu herstellen
+            const versionsInHistory = history.value.map(h => h.version);
+            const maxVersionEver = Math.max(0, ...versionsInHistory, currentVersion.value, backup.version);
+
+            // De nieuwe reeks krijgt ALTIJD het hoogste nummer ooit + 1
+            const nextMainVersion = maxVersionEver + 1;
+
+            currentVersion.value = nextMainVersion;
+            highestVersion.value = nextMainVersion;
+
+            // 4. RESET sub-versies: De bestanden beginnen in de nieuwe reeks weer bij .0
+            files.value.forEach(f => {
+                f.subVersion = 0;
+                f.activeSubVersion = null;
+            });
+
+            await nextTick();
+            if (activeFileName.value) {
+                const currentFile = files.value.find(f => f.name === activeFileName.value);
+                if (currentFile && editorInstance) {
+                    editorInstance.setValue(currentFile.content);
+                    editorInstance.clearHistory();
+                }
+            }
+
+            updatePreview();
+            await updateProjectInDB();
+
+            showToast(`Versie ${backup.version} hersteld als basis voor v${nextMainVersion}.0`, 'success');
+            expandedProjectId.value = null;
+        }
+    };
+    const deleteBackup = async (version) => {
+        if (!confirm(`Backup v${version} verwijderen?`)) return;
+        history.value = history.value.filter(h => h.version !== version);
+        await saveToCloud(true);
+        showToast(`Backup v${version} verwijderd`);
+    };
+
+    const downloadZip = async () => {
+        const zip = new JSZip();
+        files.value.forEach(file => {
+            zip.file(file.name, file.content);
+        });
+        const fileName = `${currentProjectName.value.replace(/\s+/g, '_')}_v${currentVersion.value}.zip`;
+        zip.generateAsync({ type: 'blob' }).then(function(content) {
+            saveAs(content, fileName);
+            showToast('ZIP gedownload', 'success');
+        });
+    };
+
+    const getFileIcon = (filename) => {
+        if (filename.endsWith('.html')) return 'fas fa-globe text-orange-500';
+        if (filename.endsWith('.css')) return 'fab fa-css3-alt text-blue-500';
+        if (filename.endsWith('.js')) return 'fab fa-js text-yellow-400';
+        return 'fas fa-file text-gray-400';
+    };
+
+    const formatTimeAgo = (timestamp) => {
+        if (!timestamp) return '';
+        const now = currentTime.value;
+        const diff = now - timestamp;
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(diff / 3600000);
+        const days = Math.floor(diff / 86400000);
+
+        if (diff < 60000) return 'zojuist';
+        if (minutes < 60) return `${minutes} min`;
+        if (hours < 24) return `${hours} uur`;
+        return `${days} dagen`;
+    };
+
+    const showToast = (msg, type = 'normal') => {
+        savedMessage.value = msg;
+        setTimeout(() => {
+            savedMessage.value = '';
+        }, 3000);
+    };
+
+    return {
+        isLoading,
+        showNewProjectModal,
+        newProjectName,
+        projectNameInput,
+        createProject,
+        openProject,
+        closeProject,
+        deleteProject,
+        currentProjectName,
+        projectActive,
+        currentVersion,
+        highestVersion,
+        files,
+        activeFileName,
+        activeFile,
+        history,
+        showHistoryModal,
+        showMobileMenu,
+        savedMessage,
+        setActiveFile,
+        pasteFromClipboard,
+        copyContent,
+        clearContent,
+        createBackup,
+        restoreVersion,
+        deleteBackup,
+        downloadZip,
+        getFileIcon,
+        formatTimeAgo,
+        fileInput,
+        triggerUpload,
+        handleFileUpload,
+        viewMode,
+        setViewMode,
+        previewContent,
+        insertVersionComment,
+        editorContainer,
+        projectList,
+        refreshProjectList,
+        clientId,
+        openTabs,
+
+        closeTab,
+        expandedProjectId,
+        toggleVersions,
+        dirtyFiles,
+        getFileVersion,
+        saveSingleFile,
+        activeFileHistoryTab,
+        toggleFileHistory,
+        restoreFileSubVersion,
+        deleteProjectBackup,
+        deleteFileHistoryItem,
+        saveNote,
+        lastRestoredVersion,
+        showNewFileModal,
+        newFileName,
+        createNewFile,
+        searchQuery,
+        replaceQuery,
+        searchMatches,
+        undo,
+        redo,
+        findNext,
+        replaceAll,
+        showPublishModal,
+        publishStatus,
+        publishProject,
+        stopServer,
+        downloadSingleFileZip,
+        isRefreshing,
+        forcePreviewRefresh,
+        publishCurrentState,
+        resetProjectHistory,
+        findPrev,
+        totalMatches,
+        currentMatchIndex,
+        updateMatchCounters,
+        beautifyCode,
+        hostname,
+        showSymbolList,
+        symbols,
+        toggleSymbolList,
+        jumpToSymbol,
+        showDiff, // De nieuwe variabele voor aan/uit
+        toggleDiffMode, // De functie voor het knopje
+        renderDiff,
+        apiUrl
+    };
+}
 }).mount('#app');
