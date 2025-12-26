@@ -43,11 +43,29 @@
     box-shadow: 0 0 4px rgba(0,0,0,0.8);
     display: inline-block;
 }
-
+/* Zorg dat de functielijst popup nooit transparant is */
+.symbols-popup {
+    background-color: #0f172a !important; /* Slate-900 */
+    opacity: 1 !important;
+}
 /* Soms voegt CodeMirror een extra wrapper toe, deze helpt ook: */
 .cm-searching span {
     color: #000 !important;
 }
+
+
+/* Zorg dat de functielijst mooi scrollt */
+.symbols-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+.symbols-scroll::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 10px;
+}
+
+
+
+
 
 
 /* Scrollbar voor de tabbladen balk */
@@ -125,4 +143,37 @@ aside nav button, aside nav .group {
 }
 .fade-enter-from, .fade-leave-to {
     opacity: 0;
+    }
+/* Nieuw groen: Echt toegevoegde regels */
+.line-added-highlight {
+    background-color: rgba(34, 197, 94, 0.15) !important;
+    border-left: 3px solid #22c55e;
 }
+
+/* Nieuw rood: Verwijderde regels (als widget tussen de regels) 
+.diff-removed-widget {
+    background-color: rgba(239, 68, 68, 0.15);
+    border-left: 3px solid #ef4444;
+    color: #f87171;
+    font-family: monospace;
+    font-size: 0.9em;
+    padding: 2px 8px;
+    margin: 1px 0;
+    pointer-events: none;
+}*/
+.diff-removed-widget {
+    background-color: rgba(239, 68, 68, 0.2) !important;
+    color: #f87171 !important;
+    border-left: 4px solid #ef4444 !important;
+    padding: 4px 12px !important;
+    margin: 2px 0 !important;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px !important;
+    line-height: 1.5 !important;
+    white-space: pre-wrap !important;
+    display: block !important; /* Dwingt CodeMirror om ruimte te maken */
+    z-index: 10 !important;
+    box-sizing: border-box !important;
+}
+
+
